@@ -19,25 +19,25 @@ SHEET_NAME = "T_見積入力"
 FONT_FILE = "NotoSerifJP-Regular.ttf" 
 FONT_NAME = "NotoSerifJP"
 
-# ★配色設定 (文字色と金額色を統一)
-COLOR_L1 = colors.Color(0.05, 0.35, 0.25) # 深緑 (大項目)
-COLOR_L2 = colors.Color(0.1, 0.15, 0.45)  # 濃紺 (中項目)
-COLOR_L3 = colors.Color(0.6, 0.3, 0.1)    # テラコッタ (小項目)
-COLOR_TEXT = colors.black                 # 明細本文
-COLOR_TOTAL = colors.Color(0.7, 0.1, 0.15) # 総合計 (赤)
-COLOR_ACCENT_BLUE = colors.Color(0.15, 0.25, 0.55) # 表紙
+# 配色
+COLOR_L1 = colors.Color(0.05, 0.35, 0.25) # 深緑
+COLOR_L2 = colors.Color(0.1, 0.15, 0.45)  # 濃紺
+COLOR_L3 = colors.Color(0.6, 0.3, 0.1)    # テラコッタ
+COLOR_TEXT = colors.black
+COLOR_TOTAL = colors.Color(0.7, 0.1, 0.15) # 深紅
+COLOR_ACCENT_BLUE = colors.Color(0.15, 0.25, 0.55)
 
-# ★サイズ設定 (大きく見やすく)
-ROW_HEIGHT = 9.0 * mm        # 行の高さ
-FONT_SIZE_ITEM = 10.5        # 明細の文字サイズ
-FONT_SIZE_HEADER = 12        # 見出しの文字サイズ
-FONT_SIZE_TITLE = 16         # ページタイトル
+# ★サイズ設定 (文字は大きく、行間は少し詰めてページ溢れ防止)
+ROW_HEIGHT = 8.5 * mm        # 行の高さ (9.0 -> 8.5)
+FONT_SIZE_ITEM = 10.5        # 明細文字サイズ
+FONT_SIZE_HEADER = 11.5      # 見出し文字サイズ
+FONT_SIZE_TITLE = 16         # タイトル
 
-# インデント幅
+# インデント幅 (元に戻してスッキリさせる)
 INDENT_L1 = 1.0 * mm
-INDENT_L2 = 3.0 * mm
-INDENT_L3 = 6.0 * mm
-INDENT_ITEM = 9.0 * mm
+INDENT_L2 = 2.5 * mm
+INDENT_L3 = 4.5 * mm
+INDENT_ITEM = 6.0 * mm
 
 # 表示順設定
 SORT_ORDER = {
@@ -132,8 +132,9 @@ def create_estimate_pdf(df, params):
     for k in col_widths.keys(): col_x[k] = curr_x; curr_x += col_widths[k]
     right_edge = curr_x
     
-    header_height = 10 * mm; 
-    top_margin = 35 * mm; bottom_margin = 25 * mm 
+    header_height = 9 * mm; 
+    # ★重要: マージンを少し詰めて、あと1行が入るように調整
+    top_margin = 35 * mm; bottom_margin = 20 * mm 
     y_start = height - top_margin
     rows_per_page = int((height - top_margin - bottom_margin) / ROW_HEIGHT)
 
@@ -157,7 +158,7 @@ def create_estimate_pdf(df, params):
         hy_grid = y_start
         c.setFillColor(colors.Color(0.95, 0.95, 0.95)); c.rect(x_base, hy_grid, right_edge - x_base, header_height, fill=1, stroke=0)
         c.setFillColor(colors.black); c.setFont(FONT_NAME, 11)
-        txt_y = hy_grid + 3*mm
+        txt_y = hy_grid + 2.5*mm
         labels = {'name':"名 称", 'spec':"規 格", 'qty':"数 量", 'unit':"単位", 'price':"単 価", 'amt':"金 額", 'rem':"備 考"}
         for k, txt in labels.items(): c.drawCentredString(col_x[k] + col_widths[k]/2, txt_y, txt)
         c.setStrokeColor(colors.black); c.setLineWidth(0.5); c.rect(x_base, hy_grid, right_edge - x_base, header_height, stroke=1, fill=0)
@@ -197,6 +198,7 @@ def create_estimate_pdf(df, params):
         box_top = height - 65*mm
         box_left = 30*mm; box_width = width - 60*mm; box_height = 120*mm
         box_bottom = box_top - box_height
+        
         c.setLineWidth(1.5); c.rect(box_left, box_bottom, box_width, box_height)
         c.setLineWidth(0.5); c.rect(box_left+1.5*mm, box_bottom+1.5*mm, box_width-3*mm, box_height-3*mm)
 
@@ -249,7 +251,7 @@ def create_estimate_pdf(df, params):
             l1_name = row['大項目']; amount = row['(自)金額']
             if not l1_name: continue
             draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"■ {l1_name}", FONT_SIZE_HEADER, COLOR_L1)
-            c.setFont(FONT_NAME, FONT_SIZE_HEADER); c.setFillColor(COLOR_L1) # 金額も色付け
+            c.setFont(FONT_NAME, FONT_SIZE_HEADER); c.setFillColor(COLOR_L1)
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(amount):,}")
             draw_grid_line(y - ROW_HEIGHT); y -= ROW_HEIGHT
         
@@ -262,8 +264,8 @@ def create_estimate_pdf(df, params):
         labels = [("小計", total_grand), ("消費税", tax_amount), ("総合計", final_total)]
         for lbl, val in labels:
             c.setFillColor(colors.black)
-            draw_bold_string(col_x['name'] + 20*mm, y-5*mm, f"【 {lbl} 】", FONT_SIZE_HEADER, COLOR_TOTAL)
-            c.setFont(FONT_NAME, FONT_SIZE_HEADER); c.setFillColor(COLOR_TOTAL)
+            draw_bold_string(col_x['name'] + 20*mm, y-5*mm, f"【 {lbl} 】", 11, COLOR_TOTAL)
+            c.setFont(FONT_NAME, 11); c.setFillColor(COLOR_TOTAL)
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(val):,}")
             draw_grid_line(y - ROW_HEIGHT); y -= ROW_HEIGHT
             
@@ -358,6 +360,7 @@ def create_estimate_pdf(df, params):
             sorted_l2 = sorted(l2_dict.keys(), key=lambda k: l2_order.index(k) if k in l2_order else 999)
 
             if not is_first_l1:
+                # 前のL1との間に空行を入れるか判断
                 if y <= bottom_margin + ROW_HEIGHT * 2:
                     while y > bottom_margin + 0.1: draw_grid_line(y-ROW_HEIGHT); y -= ROW_HEIGHT
                     draw_vertical_lines(y_start, y); c.showPage()
@@ -365,6 +368,7 @@ def create_estimate_pdf(df, params):
                 else:
                     draw_grid_line(y - ROW_HEIGHT); y -= ROW_HEIGHT
 
+            # 大項目ヘッダー
             if y <= bottom_margin + ROW_HEIGHT:
                 draw_vertical_lines(y_start, y); c.showPage()
                 p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
