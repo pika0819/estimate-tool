@@ -32,6 +32,15 @@ INDENT_L2 = 2.5 * mm
 INDENT_L3 = 4.5 * mm
 INDENT_ITEM = 6.0 * mm
 
+# ★ 表示順設定 (ここに書かれた順番で出力されます。リストにないものは末尾に追加されます)
+ORDER_LIST = [
+    "建築工事",
+    "電気設備工事",
+    "給排水衛生設備工事",
+    "空調換気設備工事",
+    "諸経費"
+]
+
 # ---------------------------------------------------------
 # 1. データ取得
 # ---------------------------------------------------------
@@ -206,13 +215,22 @@ def create_estimate_pdf(df, params):
         c.drawString(x_co, y_co - 19*mm, f"TEL {params['phone']}  FAX {params['fax']}")
         c.showPage()
 
-    # 3. 総括表 (大項目のみ + 最下部総合計)
+    # 3. 総括表
     def draw_page3_total_summary(p_num):
-        draw_page_header_common(p_num, "見 積 総 括 表") # タイトル変更
+        draw_page_header_common(p_num, "見 積 総 括 表")
         y = y_start
         
-        # L1集計
+        # 集計 & ソート適用
         l1_summary = df.groupby('大項目', sort=False)['(自)金額'].apply(lambda x: x.apply(parse_amount).sum()).reset_index()
+        
+        # ソートロジック
+        def sort_key(row):
+            val = row['大項目']
+            if val in ORDER_LIST: return ORDER_LIST.index(val)
+            return 999
+        l1_summary['sort_idx'] = l1_summary.apply(sort_key, axis=1)
+        l1_summary = l1_summary.sort_values('sort_idx').drop('sort_idx', axis=1)
+
         for idx, row in l1_summary.iterrows():
             l1_name = row['大項目']; amount = row['(自)金額']
             if not l1_name: continue
@@ -221,7 +239,6 @@ def create_estimate_pdf(df, params):
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(amount):,}")
             draw_grid_line(y - row_height); y -= row_height
         
-        # 最下部固定
         footer_rows = 3
         footer_start_y = bottom_margin + (footer_rows * row_height)
         while y > footer_start_y + 0.1: 
@@ -238,9 +255,8 @@ def create_estimate_pdf(df, params):
             
         draw_vertical_lines(y_start, y); c.showPage(); return p_num + 1
 
-    # 4. 内訳書 (大項目 -> 中項目リスト)
+    # 4. 内訳書
     def draw_page4_breakdown(p_num):
-        # L1 -> L2 集計
         raw_rows = df.to_dict('records')
         breakdown_data = {} 
         for row in raw_rows:
@@ -254,17 +270,22 @@ def create_estimate_pdf(df, params):
                 breakdown_data[l1]['items'][l2] += amt
             breakdown_data[l1]['total'] += amt
 
+        # ソート
+        sorted_l1_keys = sorted(breakdown_data.keys(), key=lambda k: ORDER_LIST.index(k) if k in ORDER_LIST else 999)
+
         draw_page_header_common(p_num, "内 訳 明 細 書 (集計)")
         y = y_start
         is_first_block = True
         
-        for l1_name, data in breakdown_data.items():
+        for l1_name in sorted_l1_keys:
+            data = breakdown_data[l1_name]
             l2_items = data['items']
             l1_total = data['total']
             spacer = 1 if not is_first_block else 0
-            rows_needed = spacer + 1 + len(l2_items) + 1 # Spacer + Header + Items + Subtotal
+            rows_needed = spacer + 1 + len(l2_items) + 1 
             rows_remaining = int((y - bottom_margin) / row_height)
             
+            # ブロック判定
             if rows_needed > rows_remaining:
                 while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
                 draw_vertical_lines(y_start, y); c.showPage()
@@ -283,147 +304,136 @@ def create_estimate_pdf(df, params):
                 draw_grid_line(y - row_height); y -= row_height
             
             draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"【{l1_name} 計】", 10, COLOR_L1)
-            c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L1) # ここは緑で統一
+            c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L1)
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(l1_total):,}")
             draw_grid_line(y - row_height); y -= row_height
             is_first_block = False
 
-        # ページ余白埋め
         while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
         draw_vertical_lines(y_start, y); c.showPage(); return p_num + 1
 
-    # 5. 明細書 (詳細)
+    # 5. 明細書 (詳細・ブロック制御)
     def draw_details(start_p_num):
         p_num = start_p_num
-        print_items = []
-        raw_rows = df.to_dict('records')
-        curr_l1, curr_l2, curr_l3, curr_l4 = "", "", "", ""
-        sub_l1, sub_l2, sub_l3, sub_l4 = 0, 0, 0, 0
+        
+        # まず階層構造化する (Tree構造)
+        # { L1: { L2: [Items] } }
+        data_tree = {}
+        
+        for row in df.to_dict('records'):
+            l1 = str(row.get('大項目', '')).strip()
+            l2 = str(row.get('中項目', '')).strip()
+            if not l1: continue
+            if l1 not in data_tree: data_tree[l1] = {}
+            if l2 not in data_tree[l1]: data_tree[l1][l2] = []
+            
+            amt = parse_amount(row.get('(自)金額', 0))
+            item = row.copy()
+            item.update({'amt_val': amt, 'qty_val': parse_amount(row.get('数量', 0)), 'price_val': parse_amount(row.get('(自)単価', 0))})
+            if item.get('名称'):
+                data_tree[l1][l2].append(item)
 
-        for i, row in enumerate(raw_rows):
-            l1 = str(row.get('大項目', '')).strip(); l2 = str(row.get('中項目', '')).strip()
-            l3 = str(row.get('小項目', '')).strip(); l4 = str(row.get('部分項目', '')).strip()
-            name = str(row.get('名称', '')); amt = parse_amount(row.get('(自)金額', 0))
+        # ソート
+        sorted_l1 = sorted(data_tree.keys(), key=lambda k: ORDER_LIST.index(k) if k in ORDER_LIST else 999)
 
-            l1_chg = (l1 and l1 != curr_l1); l2_chg = (l2 and l2 != curr_l2)
-            l3_chg = (l3 and l3 != curr_l3); l4_chg = (l4 and l4 != curr_l4)
+        # 描画開始
+        draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
+        is_first_l1 = True
 
-            # Footer
-            if curr_l4 and (l4_chg or l3_chg or l2_chg or l1_chg):
-                 print_items.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4}); curr_l4 = ""; sub_l4 = 0
-            if curr_l3 and (l3_chg or l2_chg or l1_chg):
-                 print_items.append({'type': 'footer_l3', 'label': f"【{curr_l3} 小計】", 'amt': sub_l3}); curr_l3 = ""; sub_l3 = 0
-            if curr_l2 and (l2_chg or l1_chg):
-                 print_items.append({'type': 'footer_l2', 'label': f"【{curr_l2} 計】", 'amt': sub_l2}); curr_l2 = ""; sub_l2 = 0
-            if curr_l1 and l1_chg:
-                 print_items.append({'type': 'footer_l1', 'label': f"■ {curr_l1} 合計", 'amt': sub_l1}); curr_l1 = ""; sub_l1 = 0
-
-            # Header
-            if l1_chg: print_items.append({'type': 'header_l1', 'label': f"■ {l1}"}); curr_l1 = l1
-            if l2_chg: print_items.append({'type': 'header_l2', 'label': f"● {l2}"}); curr_l2 = l2
-            if l3_chg: print_items.append({'type': 'header_l3', 'label': f"・ {l3}"}); curr_l3 = l3
-            if l4_chg: print_items.append({'type': 'header_l4', 'label': f"【{l4}】"}); curr_l4 = l4
-
-            if name:
-                sub_l1 += amt; sub_l2 += amt; sub_l3 += amt; sub_l4 += amt
-                d = row.copy(); d.update({'amt_val': amt, 'qty_val': parse_amount(row.get('数量', 0)), 'price_val': parse_amount(row.get('(自)単価', 0))})
-                print_items.append({'type': 'item', 'data': d})
-
-        if curr_l4: print_items.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4})
-        if curr_l3: print_items.append({'type': 'footer_l3', 'label': f"【{curr_l3} 小計】", 'amt': sub_l3})
-        if curr_l2: print_items.append({'type': 'footer_l2', 'label': f"【{curr_l2} 計】", 'amt': sub_l2})
-        if curr_l1: print_items.append({'type': 'footer_l1', 'label': f"■ {curr_l1} 合計", 'amt': sub_l1})
-
-        # 空行挿入
-        final_items = []
-        for i, item in enumerate(print_items):
-            final_items.append(item)
-            if i + 1 < len(print_items):
-                curr = item['type']; next_t = print_items[i+1]['type']
-                if curr in ['footer_l3', 'footer_l4'] and next_t.startswith('header'):
-                    final_items.append({'type': 'empty_row'})
-                if curr == 'footer_l2' and next_t.startswith('header'):
-                    final_items.append({'type': 'empty_row'})
-                if curr == 'footer_l1':
-                    final_items.append({'type': 'empty_row'})
-
-        # 描画ループ
-        curr_idx = 0
-        while curr_idx < len(final_items):
-            draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
-            rows_drawn = 0
-            while rows_drawn < rows_per_page:
-                if curr_idx < len(final_items):
-                    item = final_items[curr_idx]
-                    itype = item['type']
-                    
-                    if rows_drawn == 0 and itype == 'empty_row': 
-                        curr_idx += 1; continue
-
-                    # 底打ちロジック
-                    if itype in ['footer_l2', 'footer_l1']:
-                        is_l2_then_l1 = (itype == 'footer_l2' and curr_idx+1 < len(final_items) and final_items[curr_idx+1]['type'] == 'footer_l1')
-                        target_row = rows_per_page - 1 - (1 if is_l2_then_l1 else 0)
-                        if rows_drawn < target_row:
-                            while rows_drawn < target_row:
-                                draw_grid_line(y-row_height); y -= row_height; rows_drawn += 1
-
-                    # 改ページ判定
-                    is_header = itype in ['header_l1', 'header_l2']
-                    prev_item = final_items[curr_idx-1] if curr_idx > 0 else None
-                    is_l2_after_l1 = (itype == 'header_l2' and prev_item and prev_item['type'] == 'header_l1')
-                    if rows_drawn > 0 and is_header and not is_l2_after_l1:
-                        rem = rows_per_page - rows_drawn
-                        for _ in range(rem): draw_grid_line(y-row_height); y -= row_height
-                        break
-
-                    # 描画
-                    if itype == 'header_l1': draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, item['label'], 10, COLOR_L1)
-                    elif itype == 'header_l2': draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, item['label'], 10, COLOR_L2)
-                    elif itype == 'header_l3': draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, item['label'], 10, COLOR_L3)
-                    elif itype == 'header_l4': draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, item['label'], 9, colors.black)
-                    elif itype == 'item':
-                        d = item['data']; c.setFont(FONT_NAME, 9); c.setFillColor(colors.black)
-                        c.drawString(col_x['name']+INDENT_ITEM, y-5*mm, d.get('名称',''))
-                        c.setFont(FONT_NAME, 8); c.drawString(col_x['spec']+1*mm, y-5*mm, d.get('規格',''))
-                        c.setFont(FONT_NAME, 9)
-                        if d['qty_val']: c.drawRightString(col_x['qty']+col_widths['qty']-2*mm, y-5*mm, f"{d['qty_val']:,.2f}")
-                        c.drawCentredString(col_x['unit']+col_widths['unit']/2, y-5*mm, d.get('単位',''))
-                        if d['price_val']: c.drawRightString(col_x['price']+col_widths['price']-2*mm, y-5*mm, f"{int(d['price_val']):,}")
-                        if d['amt_val']: c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(d['amt_val']):,}")
-                        c.setFont(FONT_NAME, 8); c.drawString(col_x['rem']+1*mm, y-5*mm, d.get('備考',''))
-                    elif itype == 'footer_l4':
-                        draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, item['label'], 9, colors.black)
-                        c.setFont(FONT_NAME, 9); c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(item['amt']):,}")
-                    elif itype == 'footer_l3':
-                        draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, item['label'], 9, COLOR_L3)
-                        c.setFont(FONT_NAME, 9); c.setFillColor(colors.black)
-                        c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(item['amt']):,}")
-                    elif itype == 'footer_l2':
-                        draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, item['label'], 10, COLOR_L2)
-                        c.setFont(FONT_NAME, 10); c.setFillColor(colors.black)
-                        c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(item['amt']):,}")
-                        c.setLineWidth(1); c.setStrokeColor(COLOR_L2); c.line(x_base, y, right_edge, y)
-                    elif itype == 'footer_l1':
-                        draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, item['label'], 10, COLOR_L1)
-                        c.setFont(FONT_NAME, 10); c.setFillColor(colors.black)
-                        c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(item['amt']):,}")
-                        c.setLineWidth(1); c.setStrokeColor(COLOR_L1); c.line(x_base, y, right_edge, y)
-                    elif itype == 'empty_row': pass
-
-                    draw_grid_line(y-row_height); y -= row_height; curr_idx += 1; rows_drawn += 1
+        for l1 in sorted_l1:
+            l2_dict = data_tree[l1]
+            l1_total = sum([sum([i['amt_val'] for i in items]) for items in l2_dict.values()])
+            
+            # L1 Header
+            # L1が変わるとき、ページ残量が極端に少なければ改ページしてもいいが、
+            # 基本はL2ブロックで判定するので、ここでは Spacer だけ処理
+            if not is_first_l1:
+                # 前のL1との間に空行を入れる（入らなければ改ページ）
+                if y <= bottom_margin + row_height:
+                    draw_vertical_lines(y_start, y); c.showPage()
+                    p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
                 else:
-                    rem = rows_per_page - rows_drawn
-                    for _ in range(rem): draw_grid_line(y-row_height); y -= row_height
-                    break
-            draw_vertical_lines(y_start, y); c.showPage(); p_num += 1
+                    draw_grid_line(y - row_height); y -= row_height
+
+            # L1 Header Draw
+            if y <= bottom_margin + row_height: # ヘッダー書く場所なければ改ページ
+                draw_vertical_lines(y_start, y); c.showPage()
+                p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
+            
+            draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1}", 10, COLOR_L1)
+            draw_grid_line(y - row_height); y -= row_height
+            
+            is_first_l1 = False
+            
+            # L2 Loop
+            for l2, items in l2_dict.items():
+                l2_total = sum([i['amt_val'] for i in items])
+                
+                # ★ブロック計算
+                # 必要な行数 = L2Header(1) + Items(n) + L2Footer(1) + Spacer(1 if needed)
+                # ここでは Spacer は計算に入れず、Footerまで入るかを見る
+                rows_needed = 1 + len(items) + 1
+                rows_remaining = int((y - bottom_margin) / row_height)
+                
+                if rows_needed > rows_remaining:
+                    # 入らない -> 埋めて改ページ
+                    while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
+                    draw_vertical_lines(y_start, y); c.showPage()
+                    p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
+                    
+                    # 改ページしたので、L1見出しを再掲するか？
+                    # 通常はしないが、わかりやすさのためにL1見出しを再描画するのもアリ。
+                    # 今回は仕様にないのでそのままL2から書く。
+
+                # --- 描画 ---
+                # L2 Header
+                draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, f"● {l2}", 10, COLOR_L2)
+                draw_grid_line(y - row_height); y -= row_height
+                
+                # Items
+                for d in items:
+                    c.setFont(FONT_NAME, 9); c.setFillColor(colors.black)
+                    c.drawString(col_x['name']+INDENT_ITEM, y-5*mm, d.get('名称',''))
+                    c.setFont(FONT_NAME, 8); c.drawString(col_x['spec']+1*mm, y-5*mm, d.get('規格',''))
+                    c.setFont(FONT_NAME, 9)
+                    if d['qty_val']: c.drawRightString(col_x['qty']+col_widths['qty']-2*mm, y-5*mm, f"{d['qty_val']:,.2f}")
+                    c.drawCentredString(col_x['unit']+col_widths['unit']/2, y-5*mm, d.get('単位',''))
+                    if d['price_val']: c.drawRightString(col_x['price']+col_widths['price']-2*mm, y-5*mm, f"{int(d['price_val']):,}")
+                    if d['amt_val']: c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(d['amt_val']):,}")
+                    c.setFont(FONT_NAME, 8); c.drawString(col_x['rem']+1*mm, y-5*mm, d.get('備考',''))
+                    draw_grid_line(y - row_height); y -= row_height
+                
+                # L2 Footer
+                draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, f"【{l2} 計】", 10, COLOR_L2)
+                c.setFont(FONT_NAME, 10); c.setFillColor(colors.black)
+                c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(l2_total):,}")
+                c.setLineWidth(1); c.setStrokeColor(COLOR_L2); c.line(x_base, y, right_edge, y) # Top Line
+                draw_grid_line(y - row_height); y -= row_height
+                
+                # L2間の空行 (次のL2があれば)
+                # リストの最後でなければ空行を入れたいが、
+                # L1の最後の場合はL1 Footerが来るので空けない（というより詰めて書く）
+                # 今回のコード構造上、L2ループ内では空けないで、L1 Footerの前に空行を入れるか判断
+                pass 
+
+            # L2 Loop End -> L1 Footer
+            # L1計は中項目計の直下に書く
+            draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1} 合計", 10, COLOR_L1)
+            c.setFont(FONT_NAME, 10); c.setFillColor(colors.black)
+            c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(l1_total):,}")
+            c.setLineWidth(1); c.setStrokeColor(COLOR_L1); c.line(x_base, y, right_edge, y)
+            draw_grid_line(y - row_height); y -= row_height
+
+        # End of Page
+        while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
+        draw_vertical_lines(y_start, y); c.showPage(); p_num += 1
 
     # --- 実行 ---
     draw_page1()
     draw_page2()
-    p_next = draw_page3_total_summary(1) # P3: 総括表 (1ページ目からカウント開始？ or P3として？ -> ここでは P1スタートとしておく)
-    p_next = draw_page4_breakdown(p_next) # P4: 内訳書
-    draw_details(p_next) # P5~: 詳細明細
+    p_next = draw_page3_total_summary(1)
+    p_next = draw_page4_breakdown(p_next)
+    draw_details(p_next)
 
     c.save()
     buffer.seek(0)
