@@ -3,360 +3,245 @@ import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib import colors
 import io
-import re
-from datetime import datetime
 
 # ---------------------------------------------------------
 # ■ 設定エリア
 # ---------------------------------------------------------
-SHEET_NAME = "T_見積入力" 
+# あなたのスプレッドシートのURLから、d/〇〇/edit の「〇〇」の部分（ID）をここに貼る
+SPREADSHEET_KEY = "ここにスプレッドシートIDを貼り付けてください"
+SHEET_NAME = "T_見積入力"
+
+# フォント設定（同階層に ipaexg.ttf がある前提）
 FONT_FILE = "ipaexg.ttf"
 FONT_NAME = "IPAexGothic"
 
 # ---------------------------------------------------------
-# 1. データ取得
+# 1. データ取得（スプレッドシート接続）
 # ---------------------------------------------------------
-def get_data_from_url(sheet_url):
+def get_data_from_gsheet():
+    # StreamlitのSecretsから鍵情報を取得（GitHub/Streamlit Cloud用）
+    # ※ローカルで動かす場合は、jsonファイルを指定する方法に書き換えます
     try:
-        match = re.search(r"/d/([a-zA-Z0-9-_]+)", sheet_url)
-        if not match:
-            st.error("URLの形式が正しくありません。")
-            return None
-        spreadsheet_key = match.group(1)
-
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        # st.secrets 経由で認証情報を作る
         creds_dict = dict(st.secrets["gcp_service_account"])
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         
-        sheet = client.open_by_key(spreadsheet_key).worksheet(SHEET_NAME)
+        sheet = client.open_by_key(SPREADSHEET_KEY).worksheet(SHEET_NAME)
         data = sheet.get_all_values()
+        
+        # 1行目をヘッダーとしてDataFrame化
         df = pd.DataFrame(data[1:], columns=data[0])
         return df
     except Exception as e:
-        st.error(f"読み込みエラー: {e}")
+        st.error(f"スプレッドシートの読み込みに失敗しました: {e}")
         return None
 
 # ---------------------------------------------------------
-# 2. PDF生成エンジン (表紙 + 明細)
+# 2. PDF生成エンジン (ReportLab)
 # ---------------------------------------------------------
-def create_estimate_pdf(df, params):
+def create_estimate_pdf(df):
     buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=landscape(A4))
-    width, height = landscape(A4)
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
     
+    # フォント登録
     try:
         pdfmetrics.registerFont(TTFont(FONT_NAME, FONT_FILE))
     except:
         st.warning(f"フォントファイル({FONT_FILE})が見つかりません。")
         return None
 
-    # --- 数値変換ヘルパー ---
-    def parse_amount(val):
-        try:
-            return float(str(val).replace('¥', '').replace(',', ''))
-        except:
-            return 0.0
-
-    # 合計金額計算
-    total_grand = df['(自)金額'].apply(parse_amount).sum()
-
-    # ==========================================
-    # 1ページ目：表紙 (Cover Page)
-    # ==========================================
-    def draw_cover():
-        # タイトル「御 見 積 書」
-        c.setFont(FONT_NAME, 32)
-        c.setFillColor(colors.darkblue) # 青文字
-        title = "御   見   積   書"
-        title_w = c.stringWidth(title, FONT_NAME, 32)
-        c.drawCentredString(width/2, height - 50*mm, title)
-        
-        # 二重線 (タイトル下)
-        line_width = title_w + 40*mm
-        line_x = (width - line_width) / 2
-        line_y = height - 55*mm
-        c.setStrokeColor(colors.darkblue)
-        c.setLineWidth(1)
-        c.line(line_x, line_y, line_x + line_width, line_y) # 上線
-        c.line(line_x, line_y - 1.5*mm, line_x + line_width, line_y - 1.5*mm) # 下線
-        
-        c.setFillColor(colors.black) # 黒に戻す
-
-        # 宛名 (施主名)
-        c.setFont(FONT_NAME, 24)
-        c.drawCentredString(width/2, height - 90*mm, f"{params['client_name']}  様")
-        c.setLineWidth(0.5)
-        c.line(width/2 - 60*mm, height - 92*mm, width/2 + 60*mm, height - 92*mm) # 下線
-
-        # 工事名
-        c.setFont(FONT_NAME, 18)
-        c.drawCentredString(width/2, height - 120*mm, f"工 事 名 ：  {params['project_name']}")
-        c.line(width/2 - 60*mm, height - 122*mm, width/2 + 60*mm, height - 122*mm)
-
-        # 見積金額 (ドカンと)
-        c.setFont(FONT_NAME, 22)
-        amount_str = f"¥ {int(total_grand):,}-  (税込)"
-        c.drawCentredString(width/2, height - 150*mm, f"見積金額 ：  {amount_str}")
-        c.line(width/2 - 60*mm, height - 152*mm, width/2 + 60*mm, height - 152*mm)
-
-        # 日付 (左下)
-        c.setFont(FONT_NAME, 12)
-        c.drawString(30*mm, 40*mm, f"日付： {params['date']}")
-
-        # 会社情報 (右下)
-        x_company = width - 90*mm
-        y_company = 55*mm
-        c.setFont(FONT_NAME, 14)
-        c.drawString(x_company, y_company, params['company_name'])
-        c.setFont(FONT_NAME, 11)
-        c.drawString(x_company, y_company - 8*mm, f"代表取締役  {params['ceo']}")
-        c.setFont(FONT_NAME, 10)
-        c.drawString(x_company, y_company - 15*mm, f"〒 {params['address']}")
-        c.drawString(x_company, y_company - 20*mm, f"TEL: {params['phone']}")
-
-        # 簡易印鑑 (赤丸に「印」)
-        c.setStrokeColor(colors.red)
-        c.setFillColor(colors.red)
-        c.setLineWidth(1.5)
-        stamp_x = x_company + 65*mm
-        stamp_y = y_company - 5*mm
-        stamp_r = 9*mm
-        c.circle(stamp_x, stamp_y, stamp_r, stroke=1, fill=0)
-        c.setFont(FONT_NAME, 12)
-        c.drawCentredString(stamp_x, stamp_y - 4*mm, "印") # 文字位置はフォントにより微調整
-
-        c.showPage() # 改ページ
-
-    draw_cover()
-
-    # ==========================================
-    # 2ページ目以降：明細 (Detail Pages)
-    # ==========================================
-    
     # --- レイアウト設定 ---
     x_base = 15 * mm
-    col_widths = {
-        'name': 85 * mm, 'spec': 60 * mm, 'qty': 20 * mm, 
-        'unit': 15 * mm, 'price': 30 * mm, 'amt': 35 * mm, 'rem': 25 * mm
-    }
-    # 座標計算
-    col_x = {}
-    cur_x = x_base
-    for k, w in col_widths.items():
-        col_x[k] = cur_x
-        cur_x += w
-    right_edge = cur_x
+    y_start = height - 50 * mm
+    line_height = 5.5 * mm # 行間を少し詰めました
     
-    header_height = 8 * mm
-    row_height = 7 * mm
-    y_start = height - 30 * mm # 明細ページの開始位置（少し上から）
+    # 列位置（X座標）
+    col_x = {
+        'name': x_base + 5 * mm,   # 名称
+        'spec': x_base + 70 * mm,  # 規格
+        'qty':  x_base + 115 * mm, # 数量
+        'unit': x_base + 128 * mm, # 単位
+        'price': x_base + 150 * mm, # 単価
+        'amt':   x_base + 180 * mm  # 金額
+    }
+
+    # 変数初期化
     y = y_start
     page_num = 1
+    
+    # 階層判定用
+    prev_L1 = None # 大
+    prev_L2 = None # 中
+    prev_L3 = None # 小
+    prev_L4 = None # 部分
 
-    def draw_grid_line(y_pos):
-        c.setLineWidth(0.5); c.setStrokeColor(colors.black); c.setFillColor(colors.black)
-        c.line(x_base, y_pos, right_edge, y_pos)
+    # 金額計算（Q列：(自)金額 を合計）
+    # ※カンマや円マークを除去して計算
+    try:
+        total_amount = df['(自)金額'].astype(str).str.replace(r'[¥,]', '', regex=True).replace('', '0').astype(float).sum()
+    except:
+        total_amount = 0
 
-    def draw_vertical_lines(y_top, y_bottom):
-        c.setLineWidth(0.5); c.setStrokeColor(colors.grey)
-        for k in col_x: c.line(col_x[k], y_top, col_x[k], y_bottom)
-        c.line(right_edge, y_top, right_edge, y_bottom)
-
-    def draw_header_detail(p_num):
+    # --- ヘッダー描画関数 ---
+    def draw_header():
         nonlocal y
-        y = height - 30 * mm
+        y = height - 40 * mm
         
-        # ページ右上の情報
-        c.setFillColor(colors.black)
-        c.setFont(FONT_NAME, 10)
-        c.drawRightString(right_edge, height - 15*mm, f"{params['project_name']} (No. {p_num})")
-
-        # 表ヘッダー
-        c.setFillColor(colors.Color(0.9, 0.9, 0.9))
-        c.rect(x_base, y - header_height, right_edge - x_base, header_height, fill=1, stroke=0)
-        c.setFillColor(colors.black)
+        c.setFont(FONT_NAME, 18)
+        c.drawString(width/2 - 20*mm, height - 25*mm, "御 見 積 書")
+        
+        # 宛名・自社名（仮）
+        c.setFont(FONT_NAME, 11)
+        c.drawString(x_base, height - 25*mm, "〇〇 様")
         
         c.setFont(FONT_NAME, 10)
-        off_y = y - header_height + 2.5*mm
-        labels = {'name':"名 称", 'spec':"規 格", 'qty':"数 量", 'unit':"単位", 'price':"単 価", 'amt':"金 額", 'rem':"備 考"}
-        for k, txt in labels.items():
-            c.drawCentredString(col_x[k] + col_widths[k]/2, off_y, txt)
+        c.drawRightString(width - 15*mm, height - 20*mm, "株式会社 〇〇工務店")
+        c.drawRightString(width - 15*mm, height - 25*mm, "長野県木曽郡〇〇町...")
+
+        # 合計金額表示
+        c.setFont(FONT_NAME, 12)
+        c.drawString(x_base, height - 35*mm, f"御見積合計金額： ￥{int(total_amount):,}- (税込)")
         
-        c.setStrokeColor(colors.black)
-        c.rect(x_base, y - header_height, right_edge - x_base, header_height, stroke=1, fill=0)
-        draw_vertical_lines(y, y - header_height)
-        y -= header_height
+        # 表ヘッダー線
+        c.setLineWidth(1)
+        c.line(x_base, y + 2*mm, width - 15*mm, y + 2*mm)
+        
+        c.setFont(FONT_NAME, 9)
+        c.drawString(col_x['name'], y, "名　称")
+        c.drawString(col_x['spec'], y, "規　格")
+        c.drawString(col_x['qty'], y, "数 量")
+        c.drawString(col_x['unit'], y, "単位")
+        c.drawString(col_x['price'], y, "単 価")
+        c.drawString(col_x['amt'], y, "金 額")
+        
+        c.line(x_base, y - 2*mm, width - 15*mm, y - 2*mm)
+        y -= line_height * 1.5
 
-    draw_header_detail(page_num)
+    # 初回ヘッダー
+    draw_header()
 
-    # --- データ処理 ---
-    rows = df.to_dict('records')
-    n = len(rows)
-    subtotal_l1 = 0; subtotal_l2 = 0; subtotal_l3 = 0
-    curr_l1 = ""; curr_l2 = ""; curr_l3 = ""
-
-    for i in range(n):
-        row = rows[i]
+    # --- データ行ループ ---
+    for index, row in df.iterrows():
         # 改ページ判定
         if y < 20 * mm:
             c.setFont(FONT_NAME, 9)
             c.drawCentredString(width/2, 10*mm, f"- {page_num} -")
             c.showPage()
             page_num += 1
-            draw_header_detail(page_num)
+            draw_header()
+            # 改ページ後は見出しをリセット（再度表示させたい場合はここを調整）
+            prev_L1 = None; prev_L2 = None; prev_L3 = None; prev_L4 = None
 
-        # データ取得
-        l1 = str(row.get('大項目', '')).strip(); l2 = str(row.get('中項目', '')).strip()
-        l3 = str(row.get('小項目', '')).strip(); name = str(row.get('名称', ''))
-        spec = str(row.get('規格', '')); unit = str(row.get('単位', ''))
-        rem = str(row.get('備考', ''))
-        qty = parse_amount(row.get('数量', 0)); price = parse_amount(row.get('(自)単価', 0))
-        amt = parse_amount(row.get('(自)金額', 0))
-
-        # 見出し描画
-        if l1 and l1 != curr_l1:
-            c.setFont(FONT_NAME, 11); c.setFillColor(colors.black)
-            c.drawString(col_x['name'] + 2*mm, y - 5*mm, f"■ {l1}")
-            draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
-            y -= row_height; curr_l1 = l1; subtotal_l1 = 0; curr_l2=""; curr_l3=""
+        # 値の取得（19列構成に対応）
+        # A:大, B:中, C:小, D:部分, E:名称, F:規格, L:単位, O:単価, Q:金額
+        l1 = str(row['大項目'])
+        l2 = str(row['中項目'])
+        l3 = str(row['小項目'])
+        l4 = str(row['部分項目'])
+        name = str(row['名称'])
+        spec = str(row['規格'])
+        unit = str(row['単位'])
         
-        if l2 and l2 != curr_l2:
-            c.setFont(FONT_NAME, 10)
-            c.drawString(col_x['name'] + 6*mm, y - 5*mm, f"● {l2}")
-            draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
-            y -= row_height; curr_l2 = l2; subtotal_l2 = 0; curr_l3=""
+        # 数値の整形
+        qty_raw = str(row['数量']).replace(',', '')
+        qty = f"{float(qty_raw):,.2f}" if qty_raw and qty_raw != '' else ""
         
-        if l3 and l3 != curr_l3:
-            c.setFont(FONT_NAME, 10)
-            c.drawString(col_x['name'] + 10*mm, y - 5*mm, f"・ {l3}")
-            draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
-            y -= row_height; curr_l3 = l3; subtotal_l3 = 0
+        price_raw = str(row['(自)単価']).replace('¥', '').replace(',', '')
+        price = f"{int(float(price_raw)):,}" if price_raw and price_raw != '' else ""
+        
+        amt_raw = str(row['(自)金額']).replace('¥', '').replace(',', '')
+        amt = f"{int(float(amt_raw)):,}" if amt_raw and amt_raw != '' else ""
 
-        # 明細行
-        if name:
-            subtotal_l3 += amt; subtotal_l2 += amt; subtotal_l1 += amt
+        # --- 4段階階層ロジック ---
+        
+        # Level 1: 大項目
+        if l1 != prev_L1 and l1 != "":
+            y -= 2*mm
+            c.setFont(FONT_NAME, 11)
+            c.drawString(x_base, y, f"■ {l1}")
+            c.line(x_base, y - 1*mm, width - 15*mm, y - 1*mm) # 下線
+            y -= line_height
+            prev_L1 = l1
+            prev_L2 = None; prev_L3 = None; prev_L4 = None # リセット
+
+        # Level 2: 中項目
+        if l2 != prev_L2 and l2 != "":
+            c.setFont(FONT_NAME, 10)
+            c.drawString(x_base + 5*mm, y, f"● {l2}")
+            y -= line_height
+            prev_L2 = l2
+            prev_L3 = None; prev_L4 = None
+
+        # Level 3: 小項目
+        if l3 != prev_L3 and l3 != "":
             c.setFont(FONT_NAME, 9)
-            c.drawString(col_x['name'] + 12*mm, y - 5*mm, name)
-            c.setFont(FONT_NAME, 8)
-            c.drawString(col_x['spec'] + 1*mm, y - 5*mm, spec)
+            c.drawString(x_base + 10*mm, y, f"・ {l3}")
+            y -= line_height
+            prev_L3 = l3
+            prev_L4 = None
+
+        # Level 4: 部分項目（NEW!）
+        if l4 != prev_L4 and l4 != "":
             c.setFont(FONT_NAME, 9)
-            if qty: c.drawRightString(col_x['qty'] + col_widths['qty'] - 2*mm, y - 5*mm, f"{qty:,.2f}")
-            c.drawCentredString(col_x['unit'] + col_widths['unit']/2, y - 5*mm, unit)
-            if price: c.drawRightString(col_x['price'] + col_widths['price'] - 2*mm, y - 5*mm, f"{int(price):,}")
-            if amt: c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y - 5*mm, f"{int(amt):,}")
-            c.setFont(FONT_NAME, 8)
-            c.drawString(col_x['rem'] + 1*mm, y - 5*mm, rem)
+            c.drawString(x_base + 15*mm, y, f"- {l4}")
+            y -= line_height
+            prev_L4 = l4
+
+        # 明細行描画
+        # 名称が空ならスキップ（見出しだけの行かもしれないので）
+        if name != "":
+            c.setFont(FONT_NAME, 9)
             
-            draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
-            y -= row_height
+            indent = 20 * mm
+            c.drawString(col_x['name'] + 15*mm, y, name) # 名称
+            
+            # 規格（長すぎる場合はフォントを小さくする等の処理を入れるとGood）
+            if spec:
+                c.setFont(FONT_NAME, 8)
+                c.drawString(col_x['spec'], y, spec)
+                c.setFont(FONT_NAME, 9)
 
-        # 小計処理 (先読み)
-        next_row = rows[i+1] if i+1 < n else None
-        n_l1 = str(next_row.get('大項目', '')).strip() if next_row else ""
-        n_l2 = str(next_row.get('中項目', '')).strip() if next_row else ""
-        n_l3 = str(next_row.get('小項目', '')).strip() if next_row else ""
+            c.drawRightString(col_x['qty'], y, qty)
+            c.drawCentredString(col_x['unit'], y, unit)
+            c.drawRightString(col_x['price'], y, price)
+            c.drawRightString(col_x['amt'], y, amt)
+            
+            y -= line_height
 
-        # 小項目計
-        if curr_l3 and (n_l3 != curr_l3 or n_l2 != curr_l2 or n_l1 != curr_l1 or not next_row):
-            if subtotal_l3 > 0:
-                c.setFont(FONT_NAME, 9); c.setFillColor(colors.Color(0,0.4,0))
-                c.drawString(col_x['name'] + 10*mm, y - 5*mm, f"【{curr_l3} 小計】")
-                c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y - 5*mm, f"{int(subtotal_l3):,}")
-                c.setFillColor(colors.black)
-                draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
-                y -= row_height
-        
-        # 中項目計
-        if curr_l2 and (n_l2 != curr_l2 or n_l1 != curr_l1 or not next_row):
-            if subtotal_l2 > 0:
-                c.setFont(FONT_NAME, 9); c.setFillColor(colors.Color(0,0.4,0))
-                c.drawString(col_x['name'] + 6*mm, y - 5*mm, f"【{curr_l2} 計】")
-                c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y - 5*mm, f"{int(subtotal_l2):,}")
-                c.setFillColor(colors.black)
-                c.setLineWidth(1); c.line(x_base, y, right_edge, y) # 上太線
-                draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
-                y -= row_height
-        
-        # 大項目計
-        if curr_l1 and (n_l1 != curr_l1 or not next_row):
-            if subtotal_l1 > 0:
-                c.setFont(FONT_NAME, 10); c.setFillColor(colors.black)
-                c.drawString(col_x['name'] + 2*mm, y - 5*mm, f"■ {curr_l1} 合計")
-                c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y - 5*mm, f"{int(subtotal_l1):,}")
-                c.setLineWidth(1); c.line(x_base, y, right_edge, y)
-                draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
-                y -= row_height; y -= 3*mm
-
+    # 最終ページ番号
     c.drawCentredString(width/2, 10*mm, f"- {page_num} -")
+    
     c.save()
     buffer.seek(0)
     return buffer
 
 # ---------------------------------------------------------
-# 3. Streamlit UI (サイドバー入力付き)
+# 3. Streamlit UI
 # ---------------------------------------------------------
-st.set_page_config(layout="wide") # 画面を広く使う
 st.title("📄 自動見積書作成システム")
 
-# --- サイドバー：入力フォーム ---
-with st.sidebar:
-    st.header("📝 見積書 情報入力")
-    
-    # 毎回変わる情報
-    sheet_url = st.text_input("スプレッドシートURL", placeholder="https://docs.google.com/...")
-    client_name = st.text_input("施主名 (様は自動)", value="")
-    project_name = st.text_input("工事名", value="住宅新築工事")
-    target_date = st.date_input("日付", value=datetime.today())
-    
-    st.markdown("---")
-    st.subheader("🏢 会社情報 (固定)")
-    # デフォルト値を設定しておけば、毎回打たなくてOK
-    company_name = st.text_input("会社名", value="株式会社 〇〇工務店")
-    ceo_name = st.text_input("代表取締役", value="〇〇 〇〇")
-    address = st.text_input("住所", value="長野県木曽郡〇〇町...")
-    phone = st.text_input("電話番号", value="0264-xx-xxxx")
-
-# --- メインエリア ---
-st.markdown("#### 手順")
-st.markdown("1. 左のサイドバーに、**お客様名** や **工事名** を入力してください。")
-st.markdown("2. **スプレッドシートのURL** を貼り付けてボタンを押してください。")
-
-if st.button("見積書を作成する", type="primary"):
-    if not sheet_url:
-        st.error("URLを入力してください。")
-    elif not client_name:
-        st.error("施主名を入力してください。")
-    else:
-        with st.spinner('作成中...'):
-            df = get_data_from_url(sheet_url)
+if st.button("スプレッドシートからデータを読み込む"):
+    with st.spinner('データを取得中...'):
+        df = get_data_from_gsheet()
+        
+        if df is not None:
+            st.success("データの読み込みに成功しました！")
+            st.dataframe(df.head()) # 確認用表示
             
-            if df is not None:
-                # パラメータをまとめる
-                params = {
-                    'client_name': client_name,
-                    'project_name': project_name,
-                    'date': target_date.strftime('%Y年 %m月 %d日'),
-                    'company_name': company_name,
-                    'ceo': ceo_name,
-                    'address': address,
-                    'phone': phone
-                }
-                
-                pdf_bytes = create_estimate_pdf(df, params)
-                
-                if pdf_bytes:
-                    st.success("✅ 作成完了！")
-                    st.download_button(
-                        label="📥 PDFをダウンロード",
-                        data=pdf_bytes,
-                        file_name=f"見積書_{client_name}様.pdf",
-                        mime="application/pdf"
-                    )
-                    
+            # PDF作成
+            pdf_bytes = create_estimate_pdf(df)
+            if pdf_bytes:
+                st.download_button(
+                    label="📥 見積書PDFをダウンロード",
+                    data=pdf_bytes,
+                    file_name="見積書.pdf",
+                    mime="application/pdf"
+                )
