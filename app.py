@@ -16,9 +16,8 @@ from datetime import datetime
 # ■ 設定エリア
 # ---------------------------------------------------------
 SHEET_NAME = "T_見積入力" 
-# ★変更：明朝体を使う設定
-FONT_FILE = "ipaexm.ttf" 
-FONT_NAME = "IPAexMincho"
+FONT_FILE = "ipaexg.ttf" # ※ファイル名はそのままで中身を明朝に入れ替えている想定
+FONT_NAME = "IPAexMincho" # 登録名
 
 # ---------------------------------------------------------
 # 1. データ取得
@@ -55,134 +54,229 @@ def create_estimate_pdf(df, params):
     try:
         pdfmetrics.registerFont(TTFont(FONT_NAME, FONT_FILE))
     except:
-        st.warning(f"フォントファイル({FONT_FILE})が見つかりません。フォルダに配置してください。")
+        st.warning(f"フォントファイル({FONT_FILE})が見つかりません。")
         return None
 
+    # --- ヘルパー関数 ---
     def parse_amount(val):
         try:
             return float(str(val).replace('¥', '').replace(',', ''))
         except:
             return 0.0
 
-    total_grand = df['(自)金額'].apply(parse_amount).sum()
-
-    # --- 和暦変換関数 ---
     def to_wareki(dt_obj):
         y = dt_obj.year
         m = dt_obj.month
         d = dt_obj.day
         if y >= 2019:
             reiwa_y = y - 2018
-            if reiwa_y == 1: str_y = "元"
-            else: str_y = str(reiwa_y)
+            str_y = "元" if reiwa_y == 1 else str(reiwa_y)
             return f"令和 {str_y}年 {m}月 {d}日"
-        return dt_obj.strftime("%Y年 %m月 %d日") # 平成以前は割愛
+        return dt_obj.strftime("%Y年 %m月 %d日")
+
+    # ★太字で文字を書く関数（重ね書きで太く見せる）
+    def draw_bold_string(x, y, text, size, color=colors.black):
+        c.setFont(FONT_NAME, size)
+        c.setFillColor(color)
+        c.setStrokeColor(color)
+        # 輪郭線を描いて太くする
+        c.setTextRenderMode(2) # Fill + Stroke
+        c.setLineWidth(size * 0.03) # 文字サイズの3%の太さ
+        c.drawString(x, y, text)
+        # 元に戻す
+        c.setTextRenderMode(0)
+        c.setLineWidth(1) # 線幅リセット
+
+    def draw_bold_centered_string(x, y, text, size, color=colors.black):
+        text_w = c.stringWidth(text, FONT_NAME, size)
+        draw_bold_string(x - text_w/2, y, text, size, color)
+
+    # 合計計算
+    total_grand = df['(自)金額'].apply(parse_amount).sum()
+    tax_amount = total_grand * 0.1
+    # total_with_tax = total_grand + tax_amount # 税込が必要な場合
 
     # ==========================================
-    # 1ページ目：表紙 (Cover Page)
+    # 1ページ目：表紙 (Simple Cover)
     # ==========================================
-    def draw_cover():
-        # タイトル「御 見 積 書」
-        c.setFont(FONT_NAME, 42) # ★サイズアップ
-        c.setFillColor(colors.darkblue)
-        title = "御   見   積   書"
-        c.drawCentredString(width/2, height - 55*mm, title)
+    def draw_page1_cover():
+        # タイトル
+        draw_bold_centered_string(width/2, height - 60*mm, "御   見   積   書", 50, colors.darkblue)
         
         # 二重線
-        line_w = 120*mm
-        lx = (width - line_w) / 2
-        ly = height - 60*mm
+        lw = 140*mm
+        lx = (width - lw)/2
+        ly = height - 65*mm
         c.setStrokeColor(colors.darkblue)
-        c.setLineWidth(1.5) # 少し太く
-        c.line(lx, ly, lx + line_w, ly)
-        c.setLineWidth(0.5)
-        c.line(lx, ly - 2*mm, lx + line_w, ly - 2*mm)
-        c.setFillColor(colors.black) 
+        c.setLineWidth(2); c.line(lx, ly, lx+lw, ly)
+        c.setLineWidth(0.5); c.line(lx, ly-2*mm, lx+lw, ly-2*mm)
+        c.setFillColor(colors.black)
 
         # 宛名
-        c.setFont(FONT_NAME, 28) # ★サイズアップ
-        c.drawCentredString(width/2, height - 100*mm, f"{params['client_name']}  様")
+        draw_bold_centered_string(width/2, height - 110*mm, f"{params['client_name']}  様", 36)
         c.setStrokeColor(colors.black)
-        c.setLineWidth(0.5)
-        c.line(width/2 - 70*mm, height - 102*mm, width/2 + 70*mm, height - 102*mm)
-
-        # 下記のとおり...
-        c.setFont(FONT_NAME, 12)
-        c.drawString(width/2 - 70*mm, height - 120*mm, "下記のとおり御見積申し上げます")
-
-        # 工事名等エリア
-        # 実物写真のような「四角い枠」または「下線リスト」にします
-        box_top = height - 130*mm
-        left_label_x = width/2 - 60*mm
-        content_x = width/2 - 20*mm
-        line_r_x = width/2 + 70*mm
-        line_gap = 15*mm
-
-        # 見積金額 (特大)
-        c.setFont(FONT_NAME, 16)
-        c.drawString(left_label_x, box_top, "御見積金額 ：")
-        c.setFont(FONT_NAME, 24) # 金額ドン
-        amount_str = f"¥ {int(total_grand):,}-"
-        c.drawString(content_x, box_top, amount_str)
-        c.setFont(FONT_NAME, 12)
-        c.drawString(content_x + c.stringWidth(amount_str, FONT_NAME, 24) + 5*mm, box_top, "(税込)")
-        c.line(left_label_x, box_top - 2*mm, line_r_x, box_top - 2*mm)
+        c.setLineWidth(1)
+        c.line(width/2 - 80*mm, height - 112*mm, width/2 + 80*mm, height - 112*mm)
 
         # 工事名
-        y_pos = box_top - line_gap
+        draw_bold_centered_string(width/2, height - 140*mm, f"{params['project_name']}", 24)
+        c.setLineWidth(0.5)
+        c.line(width/2 - 80*mm, height - 142*mm, width/2 + 80*mm, height - 142*mm)
+
+        # 日付
+        wareki = to_wareki(datetime.strptime(params['date'], '%Y年 %m月 %d日'))
         c.setFont(FONT_NAME, 14)
-        c.drawString(left_label_x, y_pos, "工  事  名 ：")
-        c.setFont(FONT_NAME, 16)
-        c.drawString(content_x, y_pos, params['project_name'])
-        c.line(left_label_x, y_pos - 2*mm, line_r_x, y_pos - 2*mm)
+        c.drawString(40*mm, 50*mm, wareki)
 
-        # 会社情報 (右下)
-        # ★位置調整：被らないようにX座標を調整
-        x_company = width - 100*mm
-        y_company = 50*mm
-        
-        # 日付 (和暦)
-        wareki_date = to_wareki(datetime.strptime(params['date'], '%Y年 %m月 %d日'))
-        c.setFont(FONT_NAME, 12)
-        c.drawString(40*mm, y_company, wareki_date)
-
-        # 会社名
-        c.setFont(FONT_NAME, 16)
-        c.drawString(x_company, y_company, params['company_name'])
-        
-        # 代表
-        c.setFont(FONT_NAME, 12)
-        c.drawString(x_company, y_company - 8*mm, f"代表取締役   {params['ceo']}")
-        
-        # 住所・TEL
-        c.setFont(FONT_NAME, 10)
-        c.drawString(x_company, y_company - 16*mm, f"〒 {params['address']}")
-        c.drawString(x_company, y_company - 21*mm, f"TEL: {params['phone']}")
-
-        # 印鑑は削除しました
+        # 会社情報
+        x_co = width - 100*mm
+        y_co = 50*mm
+        draw_bold_string(x_co, y_co, params['company_name'], 18)
+        c.setFont(FONT_NAME, 13)
+        c.drawString(x_co, y_co - 10*mm, f"代表取締役   {params['ceo']}")
+        c.setFont(FONT_NAME, 11)
+        c.drawString(x_co, y_co - 20*mm, f"〒 {params['address']}")
+        c.drawString(x_co, y_co - 26*mm, f"TEL: {params['phone']}")
+        if params['fax']:
+            c.drawString(x_co + 40*mm, y_co - 26*mm, f"FAX: {params['fax']}")
 
         c.showPage()
 
-    draw_cover()
+    draw_page1_cover()
 
     # ==========================================
-    # 2ページ目以降：明細
+    # 2ページ目：見積概要書 (Summary Box)
     # ==========================================
-    x_base = 15 * mm
-    # 列幅調整 (文字を大きくするため、少しゆとりを持たせる)
+    def draw_page2_summary():
+        # タイトル
+        draw_bold_centered_string(width/2, height - 30*mm, "御   見   積   書", 32)
+        c.setLineWidth(1)
+        c.line(width/2 - 60*mm, height - 32*mm, width/2 + 60*mm, height - 32*mm)
+        c.setLineWidth(0.5)
+        c.line(width/2 - 60*mm, height - 33*mm, width/2 + 60*mm, height - 33*mm)
+
+        # 宛名
+        c.setFont(FONT_NAME, 20)
+        c.drawString(40*mm, height - 50*mm, f"{params['client_name']}  様")
+        
+        c.setFont(FONT_NAME, 12)
+        c.drawString(40*mm, height - 60*mm, "下記のとおり御見積申し上げます")
+
+        # --- 大きな枠線 ---
+        box_top = height - 70*mm
+        box_left = 40*mm
+        box_width = width - 80*mm
+        box_height = 110*mm # 枠の高さ
+        box_bottom = box_top - box_height
+
+        # 二重枠
+        c.setLineWidth(1.5); c.rect(box_left, box_bottom, box_width, box_height)
+        c.setLineWidth(0.5); c.rect(box_left+1*mm, box_bottom+1*mm, box_width-2*mm, box_height-2*mm)
+
+        # 内容の描画
+        line_start_x = box_left + 10*mm
+        label_width = 30*mm
+        content_start_x = line_start_x + label_width
+        line_end_x = box_left + box_width - 10*mm
+        
+        current_y = box_top - 15*mm
+        gap = 12*mm # 行間
+
+        # 1. 見積金額
+        draw_bold_string(line_start_x, current_y, "見積金額：", 14)
+        amount_str = f"¥ {int(total_grand):,}-"
+        draw_bold_string(content_start_x, current_y, amount_str, 18)
+        
+        # 消費税 (別途)
+        tax_str = f"(別途消費税  ¥ {int(tax_amount):,})"
+        c.setFont(FONT_NAME, 12)
+        c.drawString(content_start_x + c.stringWidth(amount_str, FONT_NAME, 18) + 5*mm, current_y, tax_str)
+        
+        c.setLineWidth(0.5)
+        c.line(line_start_x, current_y - 2*mm, line_end_x, current_y - 2*mm)
+        current_y -= gap * 1.5
+
+        # 2. 工事名
+        c.setFont(FONT_NAME, 12)
+        c.drawString(line_start_x, current_y, "工 事 名 ：")
+        c.setFont(FONT_NAME, 13)
+        c.drawString(content_start_x, current_y, params['project_name'])
+        c.line(line_start_x, current_y - 2*mm, line_end_x, current_y - 2*mm)
+        current_y -= gap
+
+        # 3. 工事場所
+        c.setFont(FONT_NAME, 12)
+        c.drawString(line_start_x, current_y, "工事場所 ：")
+        c.setFont(FONT_NAME, 13)
+        c.drawString(content_start_x, current_y, params['location'])
+        c.line(line_start_x, current_y - 2*mm, line_end_x, current_y - 2*mm)
+        current_y -= gap
+
+        # 4. 工期
+        c.setFont(FONT_NAME, 12)
+        c.drawString(line_start_x, current_y, "工    期 ：")
+        c.setFont(FONT_NAME, 13)
+        c.drawString(content_start_x, current_y, params['term'])
+        c.line(line_start_x, current_y - 2*mm, line_end_x, current_y - 2*mm)
+        current_y -= gap
+
+        # 5. その他
+        c.setFont(FONT_NAME, 12)
+        c.drawString(line_start_x, current_y, "そ の 他 ：")
+        c.drawString(content_start_x, current_y, "別紙内訳書による")
+        c.line(line_start_x, current_y - 2*mm, line_end_x, current_y - 2*mm)
+        current_y -= gap
+
+        # 6. 有効期限
+        c.drawString(line_start_x, current_y, "見積有効期限：")
+        c.drawString(content_start_x, current_y, params['expiry'])
+        c.line(line_start_x, current_y - 2*mm, line_end_x, current_y - 2*mm)
+
+        # 会社情報 (右下)
+        x_co = width - 100*mm
+        y_co = box_bottom - 20*mm
+        wareki = to_wareki(datetime.strptime(params['date'], '%Y年 %m月 %d日'))
+        c.setFont(FONT_NAME, 12)
+        c.drawString(width - 80*mm, box_top + 5*mm, wareki) # 日付は右上
+
+        c.setFont(FONT_NAME, 13)
+        c.drawString(x_co, y_co, params['company_name'])
+        c.setFont(FONT_NAME, 11)
+        c.drawString(x_co, y_co - 7*mm, f"代表取締役   {params['ceo']}")
+        c.setFont(FONT_NAME, 10)
+        c.drawString(x_co, y_co - 14*mm, f"〒 {params['address']}")
+        c.drawString(x_co, y_co - 19*mm, f"TEL {params['phone']}  FAX {params['fax']}")
+
+        c.showPage()
+
+    draw_page2_summary()
+
+    # ==========================================
+    # 3ページ目以降：明細 (Grid)
+    # ==========================================
+    
+    # 余白調整（見切れないように少し内側に）
+    x_base = 20 * mm 
+    width_content = width - 40 * mm
+    
+    # 列幅の定義
     col_widths = {
-        'name': 90 * mm, 'spec': 55 * mm, 'qty': 20 * mm, 
-        'unit': 15 * mm, 'price': 30 * mm, 'amt': 35 * mm, 'rem': 22 * mm
+        'name': 90 * mm, 'spec': 60 * mm, 'qty': 20 * mm, 
+        'unit': 15 * mm, 'price': 30 * mm, 'amt': 35 * mm, 'rem': 0 * mm # 残り
     }
+    # 備考の幅を自動計算
+    used_width = sum(col_widths.values())
+    col_widths['rem'] = width_content - used_width
+
     col_x = {}
     cur_x = x_base
-    for k, w in col_widths.items():
+    for k in col_widths.keys():
         col_x[k] = cur_x
-        cur_x += w
+        cur_x += col_widths[k]
     right_edge = cur_x
     
-    header_height = 9 * mm # 少し高く
-    row_height = 6.5 * mm  # ★行間を少し詰める
+    header_height = 10 * mm
+    row_height = 8 * mm # 行間広め
     y_start = height - 30 * mm
     y = y_start
     page_num = 1
@@ -204,12 +298,12 @@ def create_estimate_pdf(df, params):
         c.setFont(FONT_NAME, 10)
         c.drawRightString(right_edge, height - 15*mm, f"{params['project_name']} (No. {p_num})")
 
-        c.setFillColor(colors.Color(0.95, 0.95, 0.95)) # かなり薄いグレー
+        c.setFillColor(colors.Color(0.95, 0.95, 0.95))
         c.rect(x_base, y - header_height, right_edge - x_base, header_height, fill=1, stroke=0)
         c.setFillColor(colors.black)
         
-        c.setFont(FONT_NAME, 11) # ★ヘッダー文字サイズUP
-        off_y = y - header_height + 2.5*mm
+        c.setFont(FONT_NAME, 11)
+        off_y = y - header_height + 3*mm
         labels = {'name':"名 称", 'spec':"規 格", 'qty':"数 量", 'unit':"単位", 'price':"単 価", 'amt':"金 額", 'rem':"備 考"}
         for k, txt in labels.items():
             c.drawCentredString(col_x[k] + col_widths[k]/2, off_y, txt)
@@ -228,13 +322,7 @@ def create_estimate_pdf(df, params):
 
     for i in range(n):
         row = rows[i]
-        if y < 20 * mm:
-            c.setFont(FONT_NAME, 10)
-            c.drawCentredString(width/2, 10*mm, f"- {page_num} -")
-            c.showPage()
-            page_num += 1
-            draw_header_detail(page_num)
-
+        
         l1 = str(row.get('大項目', '')).strip(); l2 = str(row.get('中項目', '')).strip()
         l3 = str(row.get('小項目', '')).strip(); name = str(row.get('名称', ''))
         spec = str(row.get('規格', '')); unit = str(row.get('単位', ''))
@@ -242,78 +330,95 @@ def create_estimate_pdf(df, params):
         qty = parse_amount(row.get('数量', 0)); price = parse_amount(row.get('(自)単価', 0))
         amt = parse_amount(row.get('(自)金額', 0))
 
-        # 見出し描画 (文字サイズUP)
+        # ★改ページ判定 (大項目か中項目が変わったら強制改ページ)
+        is_l1_change = (l1 and l1 != curr_l1)
+        is_l2_change = (l2 and l2 != curr_l2)
+        is_page_full = (y < 20 * mm)
+
+        if (is_l1_change or is_l2_change or is_page_full) and i > 0:
+            c.setFont(FONT_NAME, 10)
+            c.drawCentredString(width/2, 10*mm, f"- {page_num} -")
+            c.showPage()
+            page_num += 1
+            draw_header_detail(page_num)
+            # ページが変わったら罫線をリセットするために現在位置描画
+            # (ただし見出し描画ロジックが下にあるのでそちらに任せる)
+
+        # 見出し描画 (太字で強調)
         if l1 and l1 != curr_l1:
-            c.setFont(FONT_NAME, 12); c.setFillColor(colors.black)
-            c.drawString(col_x['name'] + 2*mm, y - 5*mm, f"■ {l1}")
+            draw_bold_string(col_x['name'] + 2*mm, y - 6*mm, f"■ {l1}", 13)
             draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
             y -= row_height; curr_l1 = l1; subtotal_l1 = 0; curr_l2=""; curr_l3=""
         
         if l2 and l2 != curr_l2:
-            c.setFont(FONT_NAME, 11)
-            c.drawString(col_x['name'] + 6*mm, y - 5*mm, f"● {l2}")
+            draw_bold_string(col_x['name'] + 6*mm, y - 6*mm, f"● {l2}", 12)
             draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
             y -= row_height; curr_l2 = l2; subtotal_l2 = 0; curr_l3=""
         
         if l3 and l3 != curr_l3:
-            c.setFont(FONT_NAME, 11)
-            c.drawString(col_x['name'] + 10*mm, y - 5*mm, f"・ {l3}")
+            c.setFont(FONT_NAME, 12)
+            c.drawString(col_x['name'] + 10*mm, y - 6*mm, f"・ {l3}")
             draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
             y -= row_height; curr_l3 = l3; subtotal_l3 = 0
 
-        # 明細行 (文字サイズUP: 9pt -> 10.5pt)
+        # 明細行 (文字サイズUP)
         if name:
             subtotal_l3 += amt; subtotal_l2 += amt; subtotal_l1 += amt
-            c.setFont(FONT_NAME, 10.5) # ★標準サイズ
-            c.drawString(col_x['name'] + 12*mm, y - 5*mm, name)
-            c.setFont(FONT_NAME, 9)
-            c.drawString(col_x['spec'] + 1*mm, y - 5*mm, spec)
+            c.setFont(FONT_NAME, 12) # 文字サイズ 12pt
+            c.drawString(col_x['name'] + 12*mm, y - 6*mm, name)
+            c.setFont(FONT_NAME, 10)
+            c.drawString(col_x['spec'] + 1*mm, y - 6*mm, spec)
             
-            c.setFont(FONT_NAME, 10.5)
-            if qty: c.drawRightString(col_x['qty'] + col_widths['qty'] - 2*mm, y - 5*mm, f"{qty:,.2f}")
-            c.drawCentredString(col_x['unit'] + col_widths['unit']/2, y - 5*mm, unit)
-            if price: c.drawRightString(col_x['price'] + col_widths['price'] - 2*mm, y - 5*mm, f"{int(price):,}")
-            if amt: c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y - 5*mm, f"{int(amt):,}")
+            c.setFont(FONT_NAME, 12)
+            if qty: c.drawRightString(col_x['qty'] + col_widths['qty'] - 2*mm, y - 6*mm, f"{qty:,.2f}")
+            c.drawCentredString(col_x['unit'] + col_widths['unit']/2, y - 6*mm, unit)
+            if price: c.drawRightString(col_x['price'] + col_widths['price'] - 2*mm, y - 6*mm, f"{int(price):,}")
+            if amt: c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y - 6*mm, f"{int(amt):,}")
             
             c.setFont(FONT_NAME, 9)
-            c.drawString(col_x['rem'] + 1*mm, y - 5*mm, rem)
+            c.drawString(col_x['rem'] + 1*mm, y - 6*mm, rem)
             
             draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
             y -= row_height
 
-        # 小計 (文字サイズUP)
+        # 小計 (先読み)
         next_row = rows[i+1] if i+1 < n else None
         n_l1 = str(next_row.get('大項目', '')).strip() if next_row else ""
         n_l2 = str(next_row.get('中項目', '')).strip() if next_row else ""
         n_l3 = str(next_row.get('小項目', '')).strip() if next_row else ""
 
+        # 小項目計
         if curr_l3 and (n_l3 != curr_l3 or n_l2 != curr_l2 or n_l1 != curr_l1 or not next_row):
             if subtotal_l3 > 0:
-                c.setFont(FONT_NAME, 10); c.setFillColor(colors.Color(0,0.4,0))
-                c.drawString(col_x['name'] + 10*mm, y - 5*mm, f"【{curr_l3} 小計】")
-                c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y - 5*mm, f"{int(subtotal_l3):,}")
+                c.setFont(FONT_NAME, 11); c.setFillColor(colors.Color(0,0.4,0))
+                c.drawString(col_x['name'] + 10*mm, y - 6*mm, f"【{curr_l3} 小計】")
+                c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y - 6*mm, f"{int(subtotal_l3):,}")
                 c.setFillColor(colors.black)
                 draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
                 y -= row_height
         
+        # 中項目計
         if curr_l2 and (n_l2 != curr_l2 or n_l1 != curr_l1 or not next_row):
             if subtotal_l2 > 0:
-                c.setFont(FONT_NAME, 10); c.setFillColor(colors.Color(0,0.4,0))
-                c.drawString(col_x['name'] + 6*mm, y - 5*mm, f"【{curr_l2} 計】")
-                c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y - 5*mm, f"{int(subtotal_l2):,}")
+                draw_bold_string(col_x['name'] + 6*mm, y - 6*mm, f"【{curr_l2} 計】", 11, colors.Color(0,0.4,0))
+                c.setFont(FONT_NAME, 11); c.setFillColor(colors.Color(0,0.4,0))
+                c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y - 6*mm, f"{int(subtotal_l2):,}")
                 c.setFillColor(colors.black)
                 c.setLineWidth(1); c.line(x_base, y, right_edge, y)
                 draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
                 y -= row_height
         
+        # 大項目計
         if curr_l1 and (n_l1 != curr_l1 or not next_row):
             if subtotal_l1 > 0:
-                c.setFont(FONT_NAME, 11); c.setFillColor(colors.black)
-                c.drawString(col_x['name'] + 2*mm, y - 5*mm, f"■ {curr_l1} 合計")
-                c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y - 5*mm, f"{int(subtotal_l1):,}")
+                draw_bold_string(col_x['name'] + 2*mm, y - 6*mm, f"■ {curr_l1} 合計", 12)
+                c.setFont(FONT_NAME, 12)
+                c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y - 6*mm, f"{int(subtotal_l1):,}")
                 c.setLineWidth(1); c.line(x_base, y, right_edge, y)
                 draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
-                y -= row_height; y -= 3*mm
+                y -= row_height; 
+                # 大項目が終わったら区切りのため少し空ける（次の改ページ判定に引っかかるかもだが）
+                y -= 3*mm
 
     c.drawCentredString(width/2, 10*mm, f"- {page_num} -")
     c.save()
@@ -329,9 +434,15 @@ st.title("📄 自動見積書作成システム")
 with st.sidebar:
     st.header("📝 見積書 情報入力")
     sheet_url = st.text_input("スプレッドシートURL", placeholder="https://docs.google.com/...")
-    client_name = st.text_input("施主名 (様は自動)", value="")
+    client_name = st.text_input("施主名", value="")
     project_name = st.text_input("工事名", value="住宅新築工事")
-    target_date = st.date_input("日付", value=datetime.today())
+    
+    st.markdown("---")
+    st.subheader("📋 工事概要")
+    location = st.text_input("工事場所", value="木曽郡木曽町...")
+    term = st.text_input("工期", value="令和 7年 12月 20日")
+    expiry = st.text_input("有効期限", value="2ヶ月")
+    target_date = st.date_input("発行日", value=datetime.today())
     
     st.markdown("---")
     st.subheader("🏢 会社情報")
@@ -339,9 +450,10 @@ with st.sidebar:
     ceo_name = st.text_input("代表取締役", value="〇〇 〇〇")
     address = st.text_input("住所", value="長野県木曽郡〇〇町...")
     phone = st.text_input("電話番号", value="0264-xx-xxxx")
+    fax = st.text_input("FAX番号", value="0264-xx-xxxx")
 
 st.markdown("#### 手順")
-st.markdown("1. 左のサイドバーに、**お客様名** や **工事名** を入力してください。")
+st.markdown("1. 左のサイドバーに、情報を入力してください。")
 st.markdown("2. **スプレッドシートのURL** を貼り付けてボタンを押してください。")
 
 if st.button("見積書を作成する", type="primary"):
@@ -357,11 +469,15 @@ if st.button("見積書を作成する", type="primary"):
                 params = {
                     'client_name': client_name,
                     'project_name': project_name,
+                    'location': location,
+                    'term': term,
+                    'expiry': expiry,
                     'date': target_date.strftime('%Y年 %m月 %d日'),
                     'company_name': company_name,
                     'ceo': ceo_name,
                     'address': address,
-                    'phone': phone
+                    'phone': phone,
+                    'fax': fax
                 }
                 
                 pdf_bytes = create_estimate_pdf(df, params)
