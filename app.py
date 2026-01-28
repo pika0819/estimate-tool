@@ -322,7 +322,7 @@ def create_estimate_pdf(df, params):
         while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
         draw_vertical_lines(y_start, y); c.showPage(); return p_num + 1
 
-# 5. 明細書（修正版）
+# 5. 明細書（完成版）
     def draw_details(start_p_num):
         p_num = start_p_num
         data_tree = {}
@@ -354,15 +354,18 @@ def create_estimate_pdf(df, params):
             if not is_first_l1:
                 # 前のL1との間に空行を入れるか判断
                 if y <= bottom_margin + row_height * 2:
-                    while y > bottom_margin + 0.1: draw_grid_line(y-row_height); y -= row_height
-                    draw_vertical_lines(y_start, y); c.showPage()
+                    # ページ末端処理：必ず bottom_margin まで線を引く
+                    while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
+                    draw_vertical_lines(y_start, bottom_margin); c.showPage()
                     p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
                 else:
                     draw_grid_line(y - row_height); y -= row_height
 
             # 大項目ヘッダー
             if y <= bottom_margin + row_height:
-                draw_vertical_lines(y_start, y); c.showPage()
+                # ページ末端処理
+                while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
+                draw_vertical_lines(y_start, bottom_margin); c.showPage()
                 p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
             
             draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1}", 10, COLOR_L1)
@@ -406,7 +409,7 @@ def create_estimate_pdf(df, params):
                 
                 is_last_l2 = (i_l2 == len(sorted_l2) - 1)
                 
-                # ★修正ポイント1: 最後の中項目なら、このブロックに大項目の合計も追加してしまう
+                # 最後の中項目なら、このブロックに大項目の合計も追加
                 if is_last_l2:
                      block_items.append({'type': 'footer_l1', 'label': f"【{l1} 計】", 'amt': l1_total})
                 else:
@@ -414,54 +417,54 @@ def create_estimate_pdf(df, params):
                 
                 while block_items and block_items[-1]['type'] == 'empty_row': block_items.pop()
 
-                # ★ブロック計算
-                # 大項目の合計が含まれる場合があるので、extra_linesの調整は不要（block_itemsに既に入っている）
-                rows_needed = len(block_items)
-                rows_remaining = int((y - bottom_margin) / row_height)
-                
-                if rows_needed > rows_remaining and y < y_start:
-                    while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
-                    draw_vertical_lines(y_start, y); c.showPage()
-                    p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
-                    # ★続きヘッダー
-                    draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1} (続き)", 10, COLOR_L1)
-                    draw_grid_line(y - row_height); y -= row_height
+                # ★現在描画中の階層を追跡するための変数
+                active_l3_label = None
+                active_l4_label = None
 
                 # 描画ループ
                 for b in block_items:
                     itype = b['type']
                     
-                    # -------------------------------------------------------------
-                    # ★修正ポイント: 改ページ判定の特例措置
-                    # 通常は底についたら改ページしますが、
-                    # 「大項目の計(footer_l1)」だけは、底辺(残り0行)に書き込むことが確定しているため
-                    # ここで改ページを強制しないようにします。
-                    # -------------------------------------------------------------
+                    # 状態更新: 現在どの項目の途中かを記録
+                    if itype == 'header_l3': active_l3_label = b['label']
+                    elif itype == 'footer_l3': active_l3_label = None
+                    elif itype == 'header_l4': active_l4_label = b['label']
+                    elif itype == 'footer_l4': active_l4_label = None
+
+                    # --- 改ページ判定 ---
+                    # 特例措置: 大項目計(footer_l1)だけは底辺ギリギリでも次に行かせない
                     force_stay_on_page = (itype == 'footer_l1' and y <= bottom_margin + row_height + 0.1)
 
                     if y <= bottom_margin and not force_stay_on_page:
-                        draw_vertical_lines(y_start, y); c.showPage()
+                        # ページ末端処理
+                        draw_vertical_lines(y_start, bottom_margin) # ★修正: 必ずbottom_marginまで線を引く
+                        c.showPage()
                         p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
+                        
+                        # ★続きヘッダーの描画（L1 -> L2 -> L3 -> L4 の順）
                         draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1} (続き)", 10, COLOR_L1)
                         draw_grid_line(y - row_height); y -= row_height
+                        
                         draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, f"● {l2} (続き)", 10, COLOR_L2)
                         draw_grid_line(y - row_height); y -= row_height
 
-                    # ★復活させた底打ちロジック (伝統的な下揃えのため)
-                    # ただし、後に「大項目計」が控えている場合は、1行あけて待つように調整
+                        # ★追加: L3, L4の「(続き)」
+                        if active_l3_label:
+                            draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, f"{active_l3_label} (続き)", 10, COLOR_L3)
+                            draw_grid_line(y - row_height); y -= row_height
+                        
+                        if active_l4_label:
+                            draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, f"{active_l4_label} (続き)", 9, colors.black)
+                            draw_grid_line(y - row_height); y -= row_height
+
+                    # 底打ちロジック (伝統的な下揃え)
                     if itype in ['footer_l2', 'footer_l1']:
                         target_row_from_bottom = 0
-                        
-                        # 「中項目計」かつ「これが最後（＝直後に大項目計が来る）」なら、下から2行目をターゲットにする
-                        if itype == 'footer_l2' and is_last_l2: 
-                            target_row_from_bottom = 1
+                        if itype == 'footer_l2' and is_last_l2: target_row_from_bottom = 1
                         
                         target_y = bottom_margin + (target_row_from_bottom * row_height)
-                        
-                        # まだターゲットより上にいるなら、罫線で埋めて下げる
                         if y > target_y + 0.1:
-                            while y > target_y + 0.1:
-                                draw_grid_line(y - row_height); y -= row_height
+                            while y > target_y + 0.1: draw_grid_line(y - row_height); y -= row_height
 
                     # --- 描画処理 ---
                     if itype == 'header_l2':
@@ -484,7 +487,6 @@ def create_estimate_pdf(df, params):
                         draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, b['label'], 9, colors.black)
                         c.setFont(FONT_NAME, 9); c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")
                     
-                    # 色付き合計
                     elif itype == 'footer_l3':
                         draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, b['label'], 9, COLOR_L3)
                         c.setFont(FONT_NAME, 9); c.setFillColor(COLOR_L3) 
@@ -503,8 +505,10 @@ def create_estimate_pdf(df, params):
 
                     draw_grid_line(y - row_height); y -= row_height
 
+        # 最後のページの残りを埋める
         while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
-        draw_vertical_lines(y_start, y); c.showPage(); p_num += 1
+        draw_vertical_lines(y_start, bottom_margin) # ★修正: 最後のページもbottom_marginまで揃える
+        c.showPage(); p_num += 1
         return p_num
         
 
@@ -554,5 +558,6 @@ if st.button("作成開始", type="primary"):
                 if pdf_bytes:
                     st.success("完了")
                     st.download_button("ダウンロード", pdf_bytes, f"見積書_{client_name}.pdf", "application/pdf")
+
 
 
