@@ -26,7 +26,7 @@ COLOR_L3 = colors.Color(0.8, 0.3, 0)    # オレンジ
 COLOR_TEXT = colors.black
 COLOR_TOTAL = colors.Color(0.8, 0, 0)   # 赤
 
-# インデント幅
+# インデント幅（さらに縮小してスッキリ）
 INDENT_L1 = 1.0 * mm
 INDENT_L2 = 2.5 * mm
 INDENT_L3 = 4.5 * mm
@@ -108,7 +108,7 @@ def create_estimate_pdf(df, params):
     right_edge = curr_x
     
     header_height = 9 * mm; row_height = 7 * mm
-    top_margin = 35 * mm; bottom_margin = 20 * mm # 下余白
+    top_margin = 35 * mm; bottom_margin = 20 * mm
     y_start = height - top_margin
     rows_per_page = int((height - top_margin - bottom_margin) / row_height)
 
@@ -161,7 +161,7 @@ def create_estimate_pdf(df, params):
         if params['fax']: c.drawString(x_co + 40*mm, y_co - 26*mm, f"FAX: {params['fax']}")
         c.showPage()
 
-    # 2. 概要
+    # 2. 概要 (レイアウト修正：会社情報を枠外右下へ)
     def draw_page2():
         draw_bold_centered_string(width/2, height - 30*mm, "御   見   積   書", 32)
         c.setLineWidth(1); c.line(width/2 - 60*mm, height - 32*mm, width/2 + 60*mm, height - 32*mm)
@@ -169,6 +169,7 @@ def create_estimate_pdf(df, params):
         c.setFont(FONT_NAME, 20); c.drawString(40*mm, height - 50*mm, f"{params['client_name']}  様")
         c.setFont(FONT_NAME, 12); c.drawString(40*mm, height - 60*mm, "下記のとおり御見積申し上げます")
 
+        # 枠線
         box_top = height - 65*mm
         box_left = 40*mm; box_width = width - 80*mm; box_height = 100*mm
         box_bottom = box_top - box_height
@@ -178,6 +179,7 @@ def create_estimate_pdf(df, params):
         line_sx = box_left + 10*mm
         label_end_x = line_sx + 28*mm
         colon_x = label_end_x + 1*mm
+        # ★値をさらに右へシフト (余裕を持たせる)
         val_start_x = colon_x + 5*mm 
         line_ex = box_left + box_width - 10*mm
         curr_y = box_top - 15*mm; gap = 12*mm
@@ -200,21 +202,25 @@ def create_estimate_pdf(df, params):
             c.line(line_sx, curr_y-2*mm, line_ex, curr_y-2*mm)
             curr_y -= gap
 
-        x_co = width - 100*mm; y_co = box_bottom + 20*mm
+        # 日付は右上
         wareki = to_wareki(datetime.strptime(params['date'], '%Y年 %m月 %d日'))
         c.setFont(FONT_NAME, 12); c.drawString(width - 80*mm, box_top + 5*mm, wareki)
+
+        # ★会社情報を枠外の右下へ
+        x_co = width - 100*mm
+        y_co = box_bottom - 15*mm
+        
         c.setFont(FONT_NAME, 13); c.drawString(x_co, y_co, params['company_name'])
         c.setFont(FONT_NAME, 11); c.drawString(x_co, y_co - 7*mm, f"代表取締役   {params['ceo']}")
         c.setFont(FONT_NAME, 10); c.drawString(x_co, y_co - 14*mm, f"〒 {params['address']}")
         c.drawString(x_co, y_co - 19*mm, f"TEL {params['phone']}  FAX {params['fax']}")
         c.showPage()
 
-    # 3. 大項目集計表 (ボトム固定版)
+    # 3. 大項目集計表 (ボトム固定＆グリッド埋め)
     def draw_page3_l1_summary(p_num):
         draw_page_header_common(p_num)
         y = y_start
         
-        # L1リスト
         l1_summary = df.groupby('大項目', sort=False)['(自)金額'].apply(lambda x: x.apply(parse_amount).sum()).reset_index()
         
         for idx, row in l1_summary.iterrows():
@@ -227,13 +233,15 @@ def create_estimate_pdf(df, params):
             draw_grid_line(y - row_height)
             y -= row_height
         
-        # ★【修正】合計欄をページ最下部に固定
-        # ページ最下部のY座標を計算 (bottom_margin から 3行分上)
-        footer_height = 3 * row_height
-        footer_start_y = bottom_margin + footer_height
+        # ★最下部固定ロジック
+        footer_rows = 3
+        footer_start_y = bottom_margin + (footer_rows * row_height) + 5*mm # 少し余裕をみる
         
-        # データ行からフッター開始位置まで空行で埋める
-        while y > footer_start_y + 0.1: 
+        # フッターの開始位置（y座標）
+        footer_y_base = y_start - (rows_per_page - footer_rows) * row_height
+        
+        # そこまで空行で埋める
+        while y > footer_y_base + 0.1:
             draw_grid_line(y - row_height); y -= row_height
             
         # 赤字ブロック (最下部3行)
@@ -265,21 +273,18 @@ def create_estimate_pdf(df, params):
             l1_chg = (l1 and l1 != curr_l1); l2_chg = (l2 and l2 != curr_l2)
             l3_chg = (l3 and l3 != curr_l3); l4_chg = (l4 and l4 != curr_l4)
 
-            # Footer (小計)
-            # L4 -> L3 -> L2 -> L1 の順で閉じる
+            # Footer
             if curr_l4 and (l4_chg or l3_chg or l2_chg or l1_chg):
                  print_items.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4}); curr_l4 = ""; sub_l4 = 0
             if curr_l3 and (l3_chg or l2_chg or l1_chg):
                  print_items.append({'type': 'footer_l3', 'label': f"【{curr_l3} 小計】", 'amt': sub_l3}); curr_l3 = ""; sub_l3 = 0
             if curr_l2 and (l2_chg or l1_chg):
                  print_items.append({'type': 'footer_l2', 'label': f"【{curr_l2} 計】", 'amt': sub_l2}); curr_l2 = ""; sub_l2 = 0
-            
-            # ★【修正】中項目計の直下に大項目計を表示 (空行なし)
+            # ★中項目計のすぐ下に大項目計を表示
             if curr_l1 and l1_chg:
                  print_items.append({'type': 'footer_l1', 'label': f"■ {curr_l1} 合計", 'amt': sub_l1}); curr_l1 = ""; sub_l1 = 0
 
-            # Header (見出し)
-            # ★【修正】L1見出しの直後にL2見出しが来るように、リストに追加するだけ (描画時に間隔を詰めればOK)
+            # Header
             if l1_chg: print_items.append({'type': 'header_l1', 'label': f"■ {l1}"}); curr_l1 = l1
             if l2_chg: print_items.append({'type': 'header_l2', 'label': f"● {l2}"}); curr_l2 = l2
             if l3_chg: print_items.append({'type': 'header_l3', 'label': f"・ {l3}"}); curr_l3 = l3
@@ -290,31 +295,29 @@ def create_estimate_pdf(df, params):
                 d = row.copy(); d.update({'amt_val': amt, 'qty_val': parse_amount(row.get('数量', 0)), 'price_val': parse_amount(row.get('(自)単価', 0))})
                 print_items.append({'type': 'item', 'data': d})
 
-        # ループ後の残り小計
         if curr_l4: print_items.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4})
         if curr_l3: print_items.append({'type': 'footer_l3', 'label': f"【{curr_l3} 小計】", 'amt': sub_l3})
         if curr_l2: print_items.append({'type': 'footer_l2', 'label': f"【{curr_l2} 計】", 'amt': sub_l2})
         if curr_l1: print_items.append({'type': 'footer_l1', 'label': f"■ {curr_l1} 合計", 'amt': sub_l1})
 
-        # ★空行挿入ロジック (シンプル化)
+        # ★空行挿入ロジック (見やすく)
         final_items = []
         for i, item in enumerate(print_items):
             final_items.append(item)
             if i + 1 < len(print_items):
-                next_type = print_items[i+1]['type']
-                curr_type = item['type']
+                curr = item['type']; next_t = print_items[i+1]['type']
                 
-                # 「小計」のあとに「次の見出し」が来る場合のみ空行を入れる
-                # ただし、L1合計の後は必ず空行
-                if curr_type in ['footer_l3', 'footer_l4', 'footer_l1'] and next_type.startswith('header'):
+                # 小項目計・部分項目計の後、次の見出しが来るなら空行
+                if curr in ['footer_l3', 'footer_l4'] and next_t.startswith('header'):
                     final_items.append({'type': 'empty_row'})
                 
-                # 中項目計と大項目計の間は空けない (要望対応)
-                # なので、footer_l2 の後に footer_l1 が来るなら何もしない
+                # 中項目計の後、次の見出し(header_l2など)が来るなら空行 (大項目が変わる場合は footer_l1 が挟まるのでここは反応しない)
+                if curr == 'footer_l2' and next_t.startswith('header'):
+                    final_items.append({'type': 'empty_row'})
                 
-                # もし footer_l2 の後にすぐ header が来るなら空行 (大項目が変わらない場合)
-                if curr_type == 'footer_l2' and next_type.startswith('header'):
-                     final_items.append({'type': 'empty_row'})
+                # 大項目計の後は必ず空行
+                if curr == 'footer_l1':
+                    final_items.append({'type': 'empty_row'})
 
         # 描画ループ
         curr_idx = 0
