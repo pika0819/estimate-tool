@@ -15,15 +15,15 @@ from datetime import datetime
 # ---------------------------------------------------------
 # ■ 設定エリア
 # ---------------------------------------------------------
-SHEET_NAME = "T_見積入力" 
+SHEET_NAME = "T_見積入力" 
 INFO_SHEET_NAME = "現場情報"
-FONT_FILE = "NotoSerifJP-Regular.ttf" 
+FONT_FILE = "NotoSerifJP-Regular.ttf" 
 FONT_NAME = "NotoSerifJP"
 
 # 配色
 COLOR_L1 = colors.Color(0.05, 0.35, 0.25) # 深緑
-COLOR_L2 = colors.Color(0.1, 0.15, 0.45)  # 濃紺
-COLOR_L3 = colors.Color(0.6, 0.3, 0.1)    # テラコッタ
+COLOR_L2 = colors.Color(0.1, 0.15, 0.45)  # 濃紺
+COLOR_L3 = colors.Color(0.6, 0.3, 0.1)    # テラコッタ
 COLOR_TEXT = colors.black
 COLOR_TOTAL = colors.Color(0.7, 0.1, 0.15) # 深紅
 COLOR_ACCENT_BLUE = colors.Color(0.15, 0.25, 0.55)
@@ -617,3 +617,4 @@ else:
             st.session_state.pdf_ready = False
             st.session_state.pdf_data = None
             st.rerun()
+
