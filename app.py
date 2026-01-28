@@ -108,7 +108,7 @@ def create_estimate_pdf(df, params):
     right_edge = curr_x
     
     header_height = 9 * mm; row_height = 7 * mm
-    top_margin = 35 * mm; bottom_margin = 20 * mm
+    top_margin = 35 * mm; bottom_margin = 20 * mm # 下余白
     y_start = height - top_margin
     rows_per_page = int((height - top_margin - bottom_margin) / row_height)
 
@@ -178,7 +178,6 @@ def create_estimate_pdf(df, params):
         line_sx = box_left + 10*mm
         label_end_x = line_sx + 28*mm
         colon_x = label_end_x + 1*mm
-        # ★値をさらに右へシフト (余裕を持たせる)
         val_start_x = colon_x + 5*mm 
         line_ex = box_left + box_width - 10*mm
         curr_y = box_top - 15*mm; gap = 12*mm
@@ -201,7 +200,6 @@ def create_estimate_pdf(df, params):
             c.line(line_sx, curr_y-2*mm, line_ex, curr_y-2*mm)
             curr_y -= gap
 
-        # ★会社情報をさらに上へ
         x_co = width - 100*mm; y_co = box_bottom + 20*mm
         wareki = to_wareki(datetime.strptime(params['date'], '%Y年 %m月 %d日'))
         c.setFont(FONT_NAME, 12); c.drawString(width - 80*mm, box_top + 5*mm, wareki)
@@ -211,7 +209,7 @@ def create_estimate_pdf(df, params):
         c.drawString(x_co, y_co - 19*mm, f"TEL {params['phone']}  FAX {params['fax']}")
         c.showPage()
 
-    # 3. 大項目集計表 (3ページ目)
+    # 3. 大項目集計表 (ボトム固定版)
     def draw_page3_l1_summary(p_num):
         draw_page_header_common(p_num)
         y = y_start
@@ -219,7 +217,6 @@ def create_estimate_pdf(df, params):
         # L1リスト
         l1_summary = df.groupby('大項目', sort=False)['(自)金額'].apply(lambda x: x.apply(parse_amount).sum()).reset_index()
         
-        # リスト描画
         for idx, row in l1_summary.iterrows():
             l1_name = row['大項目']
             if not l1_name: continue
@@ -230,19 +227,16 @@ def create_estimate_pdf(df, params):
             draw_grid_line(y - row_height)
             y -= row_height
         
-        # --- ここから最下部固定の処理 ---
-        # 必要な行数（小計・消費税・合計の3行）
-        footer_rows = 3
-        # ページ最下部のY座標
-        footer_start_y = y_start - (rows_per_page - footer_rows) * row_height
+        # ★【修正】合計欄をページ最下部に固定
+        # ページ最下部のY座標を計算 (bottom_margin から 3行分上)
+        footer_height = 3 * row_height
+        footer_start_y = bottom_margin + footer_height
         
-        # リストがフッター領域に被る場合は改ページ（今回は簡易的に被らない前提か、グリッド埋めで対応）
-        
-        # まず空行で埋める（現在地からフッター開始位置まで）
-        while y > footer_start_y + 0.1: # 誤差対策
+        # データ行からフッター開始位置まで空行で埋める
+        while y > footer_start_y + 0.1: 
             draw_grid_line(y - row_height); y -= row_height
             
-        # 最下部エリア描画 (赤字ブロック)
+        # 赤字ブロック (最下部3行)
         labels = [("小計", total_grand), ("消費税", tax_amount), ("総合計", final_total)]
         for lbl, val in labels:
             c.setFillColor(colors.black)
@@ -271,18 +265,21 @@ def create_estimate_pdf(df, params):
             l1_chg = (l1 and l1 != curr_l1); l2_chg = (l2 and l2 != curr_l2)
             l3_chg = (l3 and l3 != curr_l3); l4_chg = (l4 and l4 != curr_l4)
 
-            # Footer
+            # Footer (小計)
+            # L4 -> L3 -> L2 -> L1 の順で閉じる
             if curr_l4 and (l4_chg or l3_chg or l2_chg or l1_chg):
                  print_items.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4}); curr_l4 = ""; sub_l4 = 0
             if curr_l3 and (l3_chg or l2_chg or l1_chg):
                  print_items.append({'type': 'footer_l3', 'label': f"【{curr_l3} 小計】", 'amt': sub_l3}); curr_l3 = ""; sub_l3 = 0
             if curr_l2 and (l2_chg or l1_chg):
                  print_items.append({'type': 'footer_l2', 'label': f"【{curr_l2} 計】", 'amt': sub_l2}); curr_l2 = ""; sub_l2 = 0
+            
+            # ★【修正】中項目計の直下に大項目計を表示 (空行なし)
             if curr_l1 and l1_chg:
-                # 大項目の区切り：中項目計の下に大項目計を表示
-                print_items.append({'type': 'footer_l1', 'label': f"■ {curr_l1} 合計", 'amt': sub_l1}); curr_l1 = ""; sub_l1 = 0
+                 print_items.append({'type': 'footer_l1', 'label': f"■ {curr_l1} 合計", 'amt': sub_l1}); curr_l1 = ""; sub_l1 = 0
 
-            # Header
+            # Header (見出し)
+            # ★【修正】L1見出しの直後にL2見出しが来るように、リストに追加するだけ (描画時に間隔を詰めればOK)
             if l1_chg: print_items.append({'type': 'header_l1', 'label': f"■ {l1}"}); curr_l1 = l1
             if l2_chg: print_items.append({'type': 'header_l2', 'label': f"● {l2}"}); curr_l2 = l2
             if l3_chg: print_items.append({'type': 'header_l3', 'label': f"・ {l3}"}); curr_l3 = l3
@@ -293,29 +290,33 @@ def create_estimate_pdf(df, params):
                 d = row.copy(); d.update({'amt_val': amt, 'qty_val': parse_amount(row.get('数量', 0)), 'price_val': parse_amount(row.get('(自)単価', 0))})
                 print_items.append({'type': 'item', 'data': d})
 
-        # 残り
+        # ループ後の残り小計
         if curr_l4: print_items.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4})
         if curr_l3: print_items.append({'type': 'footer_l3', 'label': f"【{curr_l3} 小計】", 'amt': sub_l3})
         if curr_l2: print_items.append({'type': 'footer_l2', 'label': f"【{curr_l2} 計】", 'amt': sub_l2})
         if curr_l1: print_items.append({'type': 'footer_l1', 'label': f"■ {curr_l1} 合計", 'amt': sub_l1})
 
-        # 空行処理
+        # ★空行挿入ロジック (シンプル化)
         final_items = []
         for i, item in enumerate(print_items):
             final_items.append(item)
             if i + 1 < len(print_items):
                 next_type = print_items[i+1]['type']
-                # 小項目計などの後に次のヘッダーが来るなら空行
-                if item['type'] in ['footer_l3', 'footer_l4'] and next_type.startswith('header'):
+                curr_type = item['type']
+                
+                # 「小計」のあとに「次の見出し」が来る場合のみ空行を入れる
+                # ただし、L1合計の後は必ず空行
+                if curr_type in ['footer_l3', 'footer_l4', 'footer_l1'] and next_type.startswith('header'):
                     final_items.append({'type': 'empty_row'})
-                # 中項目計の前にも空行（区切り）
-                if next_type == 'footer_l2':
-                    final_items.append({'type': 'empty_row'})
-                # 大項目計の前にも空行
-                if next_type == 'footer_l1':
-                    final_items.append({'type': 'empty_row'})
+                
+                # 中項目計と大項目計の間は空けない (要望対応)
+                # なので、footer_l2 の後に footer_l1 が来るなら何もしない
+                
+                # もし footer_l2 の後にすぐ header が来るなら空行 (大項目が変わらない場合)
+                if curr_type == 'footer_l2' and next_type.startswith('header'):
+                     final_items.append({'type': 'empty_row'})
 
-        # 描画
+        # 描画ループ
         curr_idx = 0
         while curr_idx < len(final_items):
             draw_page_header_common(p_num); y = y_start
@@ -325,6 +326,7 @@ def create_estimate_pdf(df, params):
                     item = final_items[curr_idx]
                     itype = item['type']
                     
+                    # 改ページ判定
                     if rows_drawn > 0 and itype in ['header_l1', 'header_l2']:
                         rem = rows_per_page - rows_drawn
                         for _ in range(rem): draw_grid_line(y-row_height); y -= row_height
