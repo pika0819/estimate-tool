@@ -104,7 +104,6 @@ def create_estimate_pdf(df, info_dict):
     width, height = landscape(A4)
     
     # 現場情報辞書からパラメータを展開
-    # 辞書のキーがシートのA列と一致している必要があります
     params = {
         'client_name': info_dict.get('施主名', ''),
         'project_name': info_dict.get('工事名', ''),
@@ -117,7 +116,6 @@ def create_estimate_pdf(df, info_dict):
         'address': info_dict.get('住所', ''),
         'phone': info_dict.get('電話番号', ''),
         'fax': info_dict.get('FAX番号', ''),
-        # 仕様などはファイル名生成に使うためparamsには含めなくても良いが念のため
         'spec': info_dict.get('見積もり仕様', '')
     }
 
@@ -132,11 +130,7 @@ def create_estimate_pdf(df, info_dict):
         except: return 0.0
 
     def to_wareki(date_str):
-        # 日付文字列(例: 2025/12/20, 2025-12-20, 令和7年...)を解析して和暦表示にする
-        # シートに入力された文字列をそのまま使う場合はそのままでOKだが、
-        # YYYY/MM/DD形式の場合は変換するロジック
         try:
-            # スラッシュやハイフン区切りの場合のみ変換を試みる
             if '/' in date_str or '-' in date_str:
                 dt_obj = pd.to_datetime(date_str)
                 y = dt_obj.year; m = dt_obj.month; d = dt_obj.day
@@ -145,7 +139,7 @@ def create_estimate_pdf(df, info_dict):
                     return f"令和 {r_y}年 {m}月 {d}日" if r_y != 1 else f"令和 元年 {m}月 {d}日"
                 return dt_obj.strftime("%Y年 %m月 %d日")
             else:
-                return date_str # 既に「令和〇年...」と入っている場合はそのまま返す
+                return date_str
         except:
             return date_str
 
@@ -561,6 +555,7 @@ def create_estimate_pdf(df, info_dict):
                     elif itype == 'footer_l4': active_l4_label = None
 
         while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
+        
         draw_vertical_lines(y_start, bottom_margin)
         
         c.showPage(); p_num += 1
@@ -583,11 +578,25 @@ def create_estimate_pdf(df, info_dict):
 st.set_page_config(layout="wide")
 st.title("📄 自動見積書作成システム")
 
-if st.button("作成開始", type="primary"):
-    if "spreadsheet" not in st.secrets or "url" not in st.secrets["spreadsheet"]:
-        st.error("secrets.toml に [spreadsheet] url が設定されていません。")
+with st.sidebar:
+    st.header("📝 設定")
+    
+    # URL選択モード
+    url_mode = st.radio("シート選択", ["🔑 登録済みシート(推奨)", "✏️ URLを直接入力"])
+    
+    sheet_url = ""
+    if url_mode == "🔑 登録済みシート(推奨)":
+        if "spreadsheet" in st.secrets and "url" in st.secrets["spreadsheet"]:
+            sheet_url = st.secrets["spreadsheet"]["url"]
+        else:
+            st.error("secrets.toml に [spreadsheet] url が設定されていません。")
     else:
-        sheet_url = st.secrets["spreadsheet"]["url"]
+        sheet_url = st.text_input("スプレッドシートURL", placeholder="https://docs.google.com/...")
+
+if st.button("作成開始", type="primary"):
+    if not sheet_url:
+        st.error("URLが設定されていません。")
+    else:
         with st.spinner('PDF生成中...'):
             df, info_dict = load_data_from_spreadsheet(sheet_url)
             if df is not None and info_dict is not None:
