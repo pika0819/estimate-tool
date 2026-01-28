@@ -33,8 +33,7 @@ INDENT_L2 = 2.5 * mm
 INDENT_L3 = 4.5 * mm
 INDENT_ITEM = 6.0 * mm
 
-# ★ 表示順設定 (大項目・中項目のみ制御。ここにある順序で出力)
-# ※小項目・部材は「スプレッドシートの入力順」になります。
+# ★ 表示順設定
 SORT_ORDER = {
     "建築工事": [
         "共通仮設工事", "直接仮設工事", "特殊基礎工事", "基礎工事", 
@@ -323,11 +322,10 @@ def create_estimate_pdf(df, params):
         while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
         draw_vertical_lines(y_start, y); c.showPage(); return p_num + 1
 
-    # 5. 明細書 (詳細・完全制御版)
+    # 5. 明細書
     def draw_details(start_p_num):
         p_num = start_p_num
         data_tree = {}
-        # データ構築 (入力順を維持するため辞書の挿入順序を利用 = Python 3.7+仕様)
         for row in df.to_dict('records'):
             l1 = str(row.get('大項目', '')).strip(); l2 = str(row.get('中項目', '')).strip()
             l3 = str(row.get('小項目', '')).strip(); l4 = str(row.get('部分項目', '')).strip()
@@ -354,6 +352,7 @@ def create_estimate_pdf(df, params):
             sorted_l2 = sorted(l2_dict.keys(), key=lambda k: l2_order.index(k) if k in l2_order else 999)
 
             if not is_first_l1:
+                # 前のL1との間に空行を入れるか判断
                 if y <= bottom_margin + row_height * 2:
                     while y > bottom_margin + 0.1: draw_grid_line(y-row_height); y -= row_height
                     draw_vertical_lines(y_start, y); c.showPage()
@@ -361,6 +360,7 @@ def create_estimate_pdf(df, params):
                 else:
                     draw_grid_line(y - row_height); y -= row_height
 
+            # 大項目ヘッダー
             if y <= bottom_margin + row_height:
                 draw_vertical_lines(y_start, y); c.showPage()
                 p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
@@ -404,21 +404,17 @@ def create_estimate_pdf(df, params):
                 block_items.extend(temp_rows)
                 block_items.append({'type': 'footer_l2', 'label': f"【{l2} 計】", 'amt': l2_total})
                 
-                # ★修正: 自動検知による末尾判定
-                is_real_last_l2 = (i_l2 == len(sorted_l2) - 1)
-                
-                if is_real_last_l2:
-                    block_items.append({'type': 'footer_l1', 'label': f"■ {l1} 合計", 'amt': l1_total})
-                else:
+                is_last_l2 = (i_l2 == len(sorted_l2) - 1)
+                if not is_last_l2:
                     block_items.append({'type': 'empty_row'}); block_items.append({'type': 'empty_row'})
                 
                 while block_items and block_items[-1]['type'] == 'empty_row': block_items.pop()
 
-                # ブロック計算
-                rows_needed = len(block_items)
+                # ★ブロック計算
+                extra_lines = 1 if is_last_l2 else 0
+                rows_needed = len(block_items) + extra_lines
                 rows_remaining = int((y - bottom_margin) / row_height)
                 
-                # 改ページ判定
                 if rows_needed > rows_remaining and y < y_start:
                     while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
                     draw_vertical_lines(y_start, y); c.showPage()
@@ -431,6 +427,7 @@ def create_estimate_pdf(df, params):
                 for b in block_items:
                     itype = b['type']
                     
+                    # ページの終わりチェック (ここで過剰な改ページ判定をしない)
                     if y <= bottom_margin:
                         draw_vertical_lines(y_start, y); c.showPage()
                         p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
@@ -440,15 +437,18 @@ def create_estimate_pdf(df, params):
                         draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, f"● {l2} (続き)", 10, COLOR_L2)
                         draw_grid_line(y - row_height); y -= row_height
 
-                    # フッター最下部固定
+                    # ★底打ちロジック (Footer L2/L1)
                     if itype in ['footer_l2', 'footer_l1']:
                         target_row_from_bottom = 0
-                        if itype == 'footer_l2' and is_real_last_l2: target_row_from_bottom = 1
+                        if itype == 'footer_l2' and is_last_l2: target_row_from_bottom = 1
                         
                         target_y = bottom_margin + (target_row_from_bottom * row_height)
-                        while y > target_y + 0.1: draw_grid_line(y - row_height); y -= row_height
+                        
+                        # まだターゲットより上にいるなら埋める
+                        if y > target_y + 0.1:
+                            while y > target_y + 0.1:
+                                draw_grid_line(y - row_height); y -= row_height
 
-                    # 描画
                     if itype == 'header_l2': draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, b['label'], 10, COLOR_L2)
                     elif itype == 'header_l3': draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, b['label'], 10, COLOR_L3)
                     elif itype == 'header_l4': draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, b['label'], 9, colors.black)
@@ -482,6 +482,9 @@ def create_estimate_pdf(df, params):
                     elif itype == 'empty_row': pass
 
                     draw_grid_line(y - row_height); y -= row_height
+
+            # L1 Footer (Loop外にあるので削除し、ブロック内に組み込んだ logic に任せる)
+            # block_itemsに追加済みなのでここでは描画しない
 
         while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
         draw_vertical_lines(y_start, y); c.showPage(); p_num += 1
