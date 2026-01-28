@@ -128,7 +128,7 @@ def create_estimate_pdf(df, params):
         c.setLineWidth(0.5); c.line(width/2 - tw/2 - 5*mm, hy - 2*mm, width/2 + tw/2 + 5*mm, hy - 2*mm)
         c.setFont(FONT_NAME, 10); c.drawRightString(right_edge, hy, params['company_name'])
         
-        # ★ページ番号を中央下に変更
+        # ページ番号（中央）
         c.drawCentredString(width/2, 10*mm, f"- {p_num} -")
 
         hy_grid = y_start
@@ -211,7 +211,7 @@ def create_estimate_pdf(df, params):
         c.drawString(x_co, y_co - 19*mm, f"TEL {params['phone']}  FAX {params['fax']}")
         c.showPage()
 
-    # 3. 大項目集計
+    # 3. 大項目集計 (絶対座標固定)
     def draw_page3_l1_summary(p_num):
         draw_page_header_common(p_num)
         y = y_start
@@ -225,11 +225,18 @@ def create_estimate_pdf(df, params):
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(amount):,}")
             draw_grid_line(y - row_height); y -= row_height
         
+        # ★【修正】合計欄の開始Y座標を絶対指定 (bottom_margin + 3行分)
         footer_rows = 3
-        footer_start_y = y_start - (rows_per_page - footer_rows) * row_height
-        while y > footer_start_y + 0.1: 
+        footer_start_y = bottom_margin + (footer_rows * row_height)
+        
+        # フッターの開始位置まで空行で埋める
+        while y > footer_start_y: 
             draw_grid_line(y - row_height); y -= row_height
             
+        # 赤字ブロック (座標リセットして描画)
+        # 念のため y を footer_start_y に合わせる
+        y = footer_start_y
+        
         labels = [("小計", total_grand), ("消費税", tax_amount), ("総合計", final_total)]
         for lbl, val in labels:
             c.setFillColor(colors.black)
@@ -256,7 +263,7 @@ def create_estimate_pdf(df, params):
             l1_chg = (l1 and l1 != curr_l1); l2_chg = (l2 and l2 != curr_l2)
             l3_chg = (l3 and l3 != curr_l3); l4_chg = (l4 and l4 != curr_l4)
 
-            # Footer
+            # Footer (閉じる処理)
             if curr_l4 and (l4_chg or l3_chg or l2_chg or l1_chg):
                  print_items.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4}); curr_l4 = ""; sub_l4 = 0
             if curr_l3 and (l3_chg or l2_chg or l1_chg):
@@ -277,12 +284,13 @@ def create_estimate_pdf(df, params):
                 d = row.copy(); d.update({'amt_val': amt, 'qty_val': parse_amount(row.get('数量', 0)), 'price_val': parse_amount(row.get('(自)単価', 0))})
                 print_items.append({'type': 'item', 'data': d})
 
+        # 残り
         if curr_l4: print_items.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4})
         if curr_l3: print_items.append({'type': 'footer_l3', 'label': f"【{curr_l3} 小計】", 'amt': sub_l3})
         if curr_l2: print_items.append({'type': 'footer_l2', 'label': f"【{curr_l2} 計】", 'amt': sub_l2})
         if curr_l1: print_items.append({'type': 'footer_l1', 'label': f"■ {curr_l1} 合計", 'amt': sub_l1})
 
-        # 空行挿入
+        # 空行挿入 (小項目・部分項目の後、中項目計・大項目計の後)
         final_items = []
         for i, item in enumerate(print_items):
             final_items.append(item)
@@ -305,15 +313,18 @@ def create_estimate_pdf(df, params):
                     item = final_items[curr_idx]
                     itype = item['type']
                     
+                    # ★【修正】ページ先頭の空行はスキップ（空白ページ防止）
+                    if rows_drawn == 0 and itype == 'empty_row':
+                        curr_idx += 1
+                        continue
+
                     # ★底打ちロジック (Footer L2/L1 を最下部へ)
                     if itype in ['footer_l2', 'footer_l1']:
-                        # 連続フッター判定
                         is_l2_then_l1 = (itype == 'footer_l2' and curr_idx+1 < len(final_items) and final_items[curr_idx+1]['type'] == 'footer_l1')
                         
                         target_idx_from_bottom = 1 if is_l2_then_l1 else 0
                         target_row = rows_per_page - 1 - target_idx_from_bottom
                         
-                        # 埋める
                         if rows_drawn < target_row:
                             while rows_drawn < target_row:
                                 draw_grid_line(y-row_height); y -= row_height; rows_drawn += 1
@@ -321,13 +332,16 @@ def create_estimate_pdf(df, params):
                     # 改ページ判定
                     is_header = itype in ['header_l1', 'header_l2']
                     prev_item = final_items[curr_idx-1] if curr_idx > 0 else None
+                    # L1->L2連続の場合は改ページしない
                     is_l2_after_l1 = (itype == 'header_l2' and prev_item and prev_item['type'] == 'header_l1')
                     
                     if rows_drawn > 0 and is_header and not is_l2_after_l1:
+                        # ページ跨ぎ回避：残りを埋めてBreak
                         rem = rows_per_page - rows_drawn
                         for _ in range(rem): draw_grid_line(y-row_height); y -= row_height
                         break
 
+                    # 描画
                     if itype == 'header_l1': draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, item['label'], 10, COLOR_L1)
                     elif itype == 'header_l2': draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, item['label'], 10, COLOR_L2)
                     elif itype == 'header_l3': draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, item['label'], 10, COLOR_L3)
@@ -363,6 +377,7 @@ def create_estimate_pdf(df, params):
 
                     draw_grid_line(y-row_height); y -= row_height; curr_idx += 1; rows_drawn += 1
                 else:
+                    # データ切れ：残りを空行で埋める
                     rem = rows_per_page - rows_drawn
                     for _ in range(rem): draw_grid_line(y-row_height); y -= row_height
                     break
