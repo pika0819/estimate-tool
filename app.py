@@ -85,7 +85,7 @@ def get_all_data_from_url(sheet_url):
         return None, None
 
 # ---------------------------------------------------------
-# 2. PDF生成エンジン（レイアウト変更なし）
+# 2. PDF生成エンジン（縦線表示を改善）
 # ---------------------------------------------------------
 def create_estimate_pdf(df, params):
     buffer = io.BytesIO()
@@ -146,8 +146,6 @@ def create_estimate_pdf(df, params):
     
     header_height = 9 * mm; row_height = 7 * mm
     top_margin = 35 * mm; 
-    
-    # ★修正ポイント: 行の高さ(7mm)の倍数になるようにマージンを調整
     bottom_margin = 21 * mm 
     
     y_start = height - top_margin
@@ -156,7 +154,29 @@ def create_estimate_pdf(df, params):
     def draw_grid_line(y_pos, color=colors.black, width=0.5):
         c.setLineWidth(width); c.setStrokeColor(color); c.line(x_base, y_pos, right_edge, y_pos)
     
+    # ★修正: グリッド全体を描画する関数（縦線・横線）
+    def draw_full_grid(y_top, y_bottom):
+        """指定範囲に完全なグリッド（縦線・横線）を描画"""
+        c.saveState()
+        
+        # 縦線を描画
+        c.setLineWidth(0.5)
+        c.setStrokeColor(colors.grey)
+        for k in col_x:
+            c.line(col_x[k], y_top, col_x[k], y_bottom)
+        c.line(right_edge, y_top, right_edge, y_bottom)
+        
+        # 横線を描画（行単位）
+        current_y = y_top
+        while current_y >= y_bottom:
+            c.setStrokeColor(colors.black)
+            c.line(x_base, current_y, right_edge, current_y)
+            current_y -= row_height
+        
+        c.restoreState()
+    
     def draw_vertical_lines(y_top, y_btm):
+        """縦線のみ描画（互換性のため残す）"""
         c.setLineWidth(0.5); c.setStrokeColor(colors.grey)
         for k in col_x: c.line(col_x[k], y_top, col_x[k], y_btm)
         c.line(right_edge, y_top, right_edge, y_btm)
@@ -249,9 +269,13 @@ def create_estimate_pdf(df, params):
         c.setFont(FONT_NAME, 12); c.drawString(width - 80*mm, box_top + 5*mm, wareki)
         c.showPage()
 
-    # 3. 総括表
+    # 3. 総括表（★グリッド描画を改善）
     def draw_page3_total_summary(p_num):
         draw_page_header_common(p_num, "見 積 総 括 表")
+        
+        # ★先にグリッド全体を描画
+        draw_full_grid(y_start, bottom_margin)
+        
         y = y_start
         
         l1_summary = df.groupby('大項目', sort=False)['(自)金額'].apply(lambda x: x.apply(parse_amount).sum()).reset_index()
@@ -267,25 +291,25 @@ def create_estimate_pdf(df, params):
             draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"■ {l1_name}", 10, COLOR_L1)
             c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L1) 
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(amount):,}")
-            draw_grid_line(y - row_height); y -= row_height
+            y -= row_height
         
+        # フッター部分（小計・消費税・総合計）
         footer_rows = 3
         footer_start_y = bottom_margin + (footer_rows * row_height)
-        while y > footer_start_y + 0.1: 
-            draw_grid_line(y - row_height); y -= row_height
-            
         y = footer_start_y
+        
         labels = [("小計", total_grand), ("消費税", tax_amount), ("総合計", final_total)]
         for lbl, val in labels:
             c.setFillColor(colors.black)
             draw_bold_string(col_x['name'] + 20*mm, y-5*mm, f"【 {lbl} 】", 11, COLOR_TOTAL)
             c.setFont(FONT_NAME, 11); c.setFillColor(COLOR_TOTAL)
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(val):,}")
-            draw_grid_line(y - row_height); y -= row_height
+            y -= row_height
             
-        draw_vertical_lines(y_start, y); c.showPage(); return p_num + 1
+        c.showPage()
+        return p_num + 1
 
-    # 4. 内訳書
+    # 4. 内訳書（★グリッド描画を改善）
     def draw_page4_breakdown(p_num):
         raw_rows = df.to_dict('records')
         breakdown_data = {} 
@@ -302,6 +326,10 @@ def create_estimate_pdf(df, params):
         sorted_l1_keys = sorted(breakdown_data.keys(), key=lambda k: list(SORT_ORDER.keys()).index(k) if k in SORT_ORDER else 999)
 
         draw_page_header_common(p_num, "内 訳 明 細 書 (集計)")
+        
+        # ★先にグリッド全体を描画
+        draw_full_grid(y_start, bottom_margin)
+        
         y = y_start
         is_first_block = True
         
@@ -318,33 +346,37 @@ def create_estimate_pdf(df, params):
             rows_remaining = int((y - bottom_margin) / row_height)
             
             if rows_needed > rows_remaining:
-                while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
-                draw_vertical_lines(y_start, y); c.showPage()
-                p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (集計)")
-                y = y_start; is_first_block = True; spacer = 0
+                c.showPage()
+                p_num += 1
+                draw_page_header_common(p_num, "内 訳 明 細 書 (集計)")
+                # ★新ページでもグリッド全体を描画
+                draw_full_grid(y_start, bottom_margin)
+                y = y_start
+                is_first_block = True
+                spacer = 0
 
-            if spacer: draw_grid_line(y - row_height); y -= row_height
+            if spacer: y -= row_height
             
             draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"■ {l1_name}", 10, COLOR_L1)
-            draw_grid_line(y - row_height); y -= row_height
+            y -= row_height
             
             for l2_name in sorted_l2_keys:
                 l2_amt = l2_items[l2_name]
                 draw_bold_string(col_x['name'] + INDENT_L2, y-5*mm, f"● {l2_name}", 10, COLOR_L2)
                 c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L2)
                 c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(l2_amt):,}")
-                draw_grid_line(y - row_height); y -= row_height
+                y -= row_height
             
             draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"【{l1_name} 計】", 10, COLOR_L1)
             c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L1)
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(l1_total):,}")
-            draw_grid_line(y - row_height); y -= row_height
+            y -= row_height
             is_first_block = False
 
-        while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
-        draw_vertical_lines(y_start, y); c.showPage(); return p_num + 1
+        c.showPage()
+        return p_num + 1
 
-    # 5. 明細書
+    # 5. 明細書（★グリッド描画を改善）
     def draw_details(start_p_num):
         p_num = start_p_num
         data_tree = {}
@@ -363,7 +395,12 @@ def create_estimate_pdf(df, params):
 
         sorted_l1 = sorted(data_tree.keys(), key=lambda k: list(SORT_ORDER.keys()).index(k) if k in SORT_ORDER else 999)
 
-        draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
+        draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
+        
+        # ★先にグリッド全体を描画
+        draw_full_grid(y_start, bottom_margin)
+        
+        y = y_start
         is_first_l1 = True
 
         for l1 in sorted_l1:
@@ -375,22 +412,26 @@ def create_estimate_pdf(df, params):
 
             if not is_first_l1:
                 if y <= bottom_margin + row_height * 2:
-                    while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
-                    draw_vertical_lines(y_start, bottom_margin)
                     c.showPage()
-                    p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
+                    p_num += 1
+                    draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
+                    # ★新ページでもグリッド全体を描画
+                    draw_full_grid(y_start, bottom_margin)
+                    y = y_start
                 else:
-                    draw_grid_line(y - row_height); y -= row_height
+                    y -= row_height
 
             # 大項目ヘッダー
             if y <= bottom_margin + row_height:
-                while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
-                draw_vertical_lines(y_start, bottom_margin)
                 c.showPage()
-                p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
+                p_num += 1
+                draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
+                # ★新ページでもグリッド全体を描画
+                draw_full_grid(y_start, bottom_margin)
+                y = y_start
             
             draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1}", 10, COLOR_L1)
-            draw_grid_line(y - row_height); y -= row_height
+            y -= row_height
             is_first_l1 = False
             
             for i_l2, l2 in enumerate(sorted_l2):
@@ -449,30 +490,27 @@ def create_estimate_pdf(df, params):
                     force_stay = (itype == 'footer_l1')
                     
                     if y - row_height < bottom_margin - 0.1 and not force_stay:
-                        temp_y = y
-                        while temp_y > bottom_margin + 0.1:
-                            draw_grid_line(temp_y - row_height)
-                            temp_y -= row_height
-
-                        draw_vertical_lines(y_start, bottom_margin) 
-                        
                         c.showPage()
-                        p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
+                        p_num += 1
+                        draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
+                        # ★新ページでもグリッド全体を描画
+                        draw_full_grid(y_start, bottom_margin)
+                        y = y_start
                         
                         draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1} (続き)", 10, COLOR_L1)
-                        draw_grid_line(y - row_height); y -= row_height
+                        y -= row_height
                         
                         if l2_has_started and itype != 'footer_l1':
                             draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, f"● {l2} (続き)", 10, COLOR_L2)
-                            draw_grid_line(y - row_height); y -= row_height
+                            y -= row_height
 
                         if active_l3_label:
                             draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, f"{active_l3_label} (続き)", 10, COLOR_L3)
-                            draw_grid_line(y - row_height); y -= row_height
+                            y -= row_height
                         
                         if active_l4_label:
                             draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, f"{active_l4_label} (続き)", 9, colors.black)
-                            draw_grid_line(y - row_height); y -= row_height
+                            y -= row_height
 
                     # 底打ちロジック (footerのみ)
                     if itype in ['footer_l2', 'footer_l1']:
@@ -481,7 +519,7 @@ def create_estimate_pdf(df, params):
                         
                         target_y = bottom_margin + (target_row_from_bottom * row_height)
                         if y > target_y + 0.1:
-                            while y > target_y + 0.1: draw_grid_line(y - row_height); y -= row_height
+                            while y > target_y + 0.1: y -= row_height
 
                     # --- 描画処理 ---
                     if itype == 'header_l2':
@@ -520,7 +558,7 @@ def create_estimate_pdf(df, params):
                         c.setLineWidth(1); c.setStrokeColor(COLOR_L1); c.line(x_base, y, right_edge, y)
                     elif itype == 'empty_row': pass
 
-                    draw_grid_line(y - row_height); y -= row_height
+                    y -= row_height
 
                     if itype == 'header_l2': l2_has_started = True
                     elif itype == 'header_l3': active_l3_label = b['label']
@@ -528,9 +566,8 @@ def create_estimate_pdf(df, params):
                     elif itype == 'header_l4': active_l4_label = b['label']
                     elif itype == 'footer_l4': active_l4_label = None
 
-        while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
-        draw_vertical_lines(y_start, bottom_margin)
-        c.showPage(); p_num += 1
+        c.showPage()
+        p_num += 1
         return p_num
 
     # --- 実行 ---
@@ -545,34 +582,53 @@ def create_estimate_pdf(df, params):
     return buffer
 
 # ---------------------------------------------------------
-# 3. UI（セキュリティ＆現場情報自動取得対応）
+# 3. UI（★URL入力方法を改善）
 # ---------------------------------------------------------
 st.set_page_config(layout="wide")
 st.title("📄 自動見積書作成システム")
 
-# セッション状態の管理（URL破棄用）
+# セッション状態の管理
 if 'pdf_ready' not in st.session_state:
     st.session_state.pdf_ready = False
 if 'pdf_data' not in st.session_state:
     st.session_state.pdf_data = None
 if 'filename' not in st.session_state:
     st.session_state.filename = ""
+if 'sheet_url' not in st.session_state:
+    st.session_state.sheet_url = ""
 
 if not st.session_state.pdf_ready:
     with st.sidebar:
-        st.header("🔑 セキュリティ入力")
-        # 伏せ字でURLを入力
-        input_url = st.text_input("スプレッドシートURL", type="password", placeholder="https://docs.google.com/...")
+        st.header("🔑 データ入力")
+        
+        # ★改善: URL入力後は非表示にする
+        if not st.session_state.sheet_url:
+            # URL未入力時のみ表示
+            input_url = st.text_input(
+                "スプレッドシートURL", 
+                placeholder="https://docs.google.com/spreadsheets/d/...",
+                help="GoogleスプレッドシートのURLを貼り付けてください",
+                label_visibility="visible"
+            )
+        else:
+            # URL入力済みの場合は確認表示のみ
+            st.success("✓ URL入力済み")
+            input_url = st.session_state.sheet_url
+            if st.button("URLをリセット"):
+                st.session_state.sheet_url = ""
+                st.rerun()
     
     if st.button("作成開始", type="primary"):
         if not input_url:
             st.error("URLを入力してください。")
         else:
+            # URLをセッションに保存
+            st.session_state.sheet_url = input_url
+            
             with st.spinner('データを読み込み中...'):
                 df, info_dict = get_all_data_from_url(input_url)
                 if df is not None and info_dict is not None:
                     # 現場情報シートからパラメータを整理
-                    # PDF生成エンジンが期待するキー形式に変換
                     params = {
                         'client_name': info_dict.get('施主名', ''),
                         'project_name': info_dict.get('工事名', ''),
@@ -590,7 +646,7 @@ if not st.session_state.pdf_ready:
                     # PDF生成
                     pdf_bytes = create_estimate_pdf(df, params)
                     
-                    # ファイル名の生成: 発行日_施主名_工事名_見積もり仕様.pdf
+                    # ファイル名の生成
                     date_val = params['date'].replace('/', '').replace('-', '').replace('年', '').replace('月', '').replace('日', '')
                     spec = info_dict.get('見積もり仕様', '見積')
                     filename = f"{date_val}_{params['client_name']}_{params['project_name']}_{spec}.pdf"
@@ -601,19 +657,21 @@ if not st.session_state.pdf_ready:
                     st.rerun()
 
 else:
-    st.success("✅ PDF生成が完了しました。URL情報は破棄されました。")
-    st.info(f"ファイル名: {st.session_state.filename}")
+    st.success("✅ PDF生成が完了しました。")
+    st.info(f"📄 ファイル名: {st.session_state.filename}")
     
     col1, col2 = st.columns(2)
     with col1:
         st.download_button(
-            "📥 ダウンロード", 
+            "📥 PDFをダウンロード", 
             st.session_state.pdf_data, 
             file_name=st.session_state.filename, 
-            mime="application/pdf"
+            mime="application/pdf",
+            use_container_width=True
         )
     with col2:
-        if st.button("別のシートを作成する"):
+        if st.button("🔄 別のシートを作成する", use_container_width=True):
             st.session_state.pdf_ready = False
             st.session_state.pdf_data = None
+            st.session_state.sheet_url = ""
             st.rerun()
