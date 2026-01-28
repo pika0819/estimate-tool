@@ -305,14 +305,24 @@ def create_estimate_pdf(df, params):
                     item = final_items[curr_idx]
                     itype = item['type']
                     
-                    # ★改ページ判定の修正
+                    # ★底打ちロジック (Footer L2/L1 を最下部へ)
+                    if itype in ['footer_l2', 'footer_l1']:
+                        # 連続フッター判定
+                        is_l2_then_l1 = (itype == 'footer_l2' and curr_idx+1 < len(final_items) and final_items[curr_idx+1]['type'] == 'footer_l1')
+                        
+                        target_idx_from_bottom = 1 if is_l2_then_l1 else 0
+                        target_row = rows_per_page - 1 - target_idx_from_bottom
+                        
+                        # 埋める
+                        if rows_drawn < target_row:
+                            while rows_drawn < target_row:
+                                draw_grid_line(y-row_height); y -= row_height; rows_drawn += 1
+
+                    # 改ページ判定
                     is_header = itype in ['header_l1', 'header_l2']
-                    # 直前の項目を取得
                     prev_item = final_items[curr_idx-1] if curr_idx > 0 else None
-                    # 「大項目(L1)」の直後に「中項目(L2)」が来た場合は、改ページ禁止（例外扱い）
                     is_l2_after_l1 = (itype == 'header_l2' and prev_item and prev_item['type'] == 'header_l1')
                     
-                    # ページの先頭(rows_drawn=0)以外で、ヘッダーが来て、かつ「L1->L2連続」でないなら改ページ
                     if rows_drawn > 0 and is_header and not is_l2_after_l1:
                         rem = rows_per_page - rows_drawn
                         for _ in range(rem): draw_grid_line(y-row_height); y -= row_height
