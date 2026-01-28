@@ -431,7 +431,15 @@ def create_estimate_pdf(df, params):
                 for b in block_items:
                     itype = b['type']
                     
-                    if y <= bottom_margin:
+                    # -------------------------------------------------------------
+                    # ★修正ポイント: 改ページ判定の特例措置
+                    # 通常は底についたら改ページしますが、
+                    # 「大項目の計(footer_l1)」だけは、底辺(残り0行)に書き込むことが確定しているため
+                    # ここで改ページを強制しないようにします。
+                    # -------------------------------------------------------------
+                    force_stay_on_page = (itype == 'footer_l1' and y <= bottom_margin + row_height + 0.1)
+
+                    if y <= bottom_margin and not force_stay_on_page:
                         draw_vertical_lines(y_start, y); c.showPage()
                         p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
                         draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1} (続き)", 10, COLOR_L1)
@@ -439,21 +447,29 @@ def create_estimate_pdf(df, params):
                         draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, f"● {l2} (続き)", 10, COLOR_L2)
                         draw_grid_line(y - row_height); y -= row_height
 
-                    # ★底打ちロジック (Footer L2/L1)
+                    # ★復活させた底打ちロジック (伝統的な下揃えのため)
+                    # ただし、後に「大項目計」が控えている場合は、1行あけて待つように調整
                     if itype in ['footer_l2', 'footer_l1']:
                         target_row_from_bottom = 0
-                        # 大項目計(footer_l1)が最後に来るため、footer_l2は下から2行目にする必要がある
-                        if itype == 'footer_l2' and is_last_l2: target_row_from_bottom = 1
+                        
+                        # 「中項目計」かつ「これが最後（＝直後に大項目計が来る）」なら、下から2行目をターゲットにする
+                        if itype == 'footer_l2' and is_last_l2: 
+                            target_row_from_bottom = 1
                         
                         target_y = bottom_margin + (target_row_from_bottom * row_height)
                         
+                        # まだターゲットより上にいるなら、罫線で埋めて下げる
                         if y > target_y + 0.1:
                             while y > target_y + 0.1:
                                 draw_grid_line(y - row_height); y -= row_height
 
-                    if itype == 'header_l2': draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, b['label'], 10, COLOR_L2)
-                    elif itype == 'header_l3': draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, b['label'], 10, COLOR_L3)
-                    elif itype == 'header_l4': draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, b['label'], 9, colors.black)
+                    # --- 描画処理 ---
+                    if itype == 'header_l2':
+                        draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, b['label'], 10, COLOR_L2)
+                    elif itype == 'header_l3':
+                        draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, b['label'], 10, COLOR_L3)
+                    elif itype == 'header_l4':
+                        draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, b['label'], 9, colors.black)
                     elif itype == 'item':
                         d = b['data']; c.setFont(FONT_NAME, 9); c.setFillColor(colors.black)
                         c.drawString(col_x['name']+INDENT_ITEM, y-5*mm, d.get('名称',''))
@@ -468,19 +484,19 @@ def create_estimate_pdf(df, params):
                         draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, b['label'], 9, colors.black)
                         c.setFont(FONT_NAME, 9); c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")
                     
-                    # ★修正ポイント2: 金額の色もタイトル色に合わせる
+                    # 色付き合計
                     elif itype == 'footer_l3':
                         draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, b['label'], 9, COLOR_L3)
-                        c.setFont(FONT_NAME, 9); c.setFillColor(COLOR_L3) # 色変更
+                        c.setFont(FONT_NAME, 9); c.setFillColor(COLOR_L3) 
                         c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")
                     elif itype == 'footer_l2':
                         draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, b['label'], 10, COLOR_L2)
-                        c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L2) # 色変更
+                        c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L2)
                         c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")
                         c.setLineWidth(1); c.setStrokeColor(COLOR_L2); c.line(x_base, y, right_edge, y)
                     elif itype == 'footer_l1':
                         draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, b['label'], 10, COLOR_L1)
-                        c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L1) # 色変更
+                        c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L1)
                         c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")
                         c.setLineWidth(1); c.setStrokeColor(COLOR_L1); c.line(x_base, y, right_edge, y)
                     elif itype == 'empty_row': pass
@@ -538,4 +554,5 @@ if st.button("作成開始", type="primary"):
                 if pdf_bytes:
                     st.success("完了")
                     st.download_button("ダウンロード", pdf_bytes, f"見積書_{client_name}.pdf", "application/pdf")
+
 
