@@ -22,7 +22,7 @@ FONT_NAME = "IPAexMincho"
 # 色設定 (見出し文字用)
 COLOR_L1 = colors.Color(0, 0.4, 0)      # 緑
 COLOR_L2 = colors.Color(0, 0, 0.6)      # 紺
-COLOR_L3 = colors.Color(0.8, 0.3, 0)    # 濃いオレンジ (少し落ち着かせました)
+COLOR_L3 = colors.Color(0.8, 0.3, 0)    # 濃いオレンジ
 COLOR_TEXT = colors.black
 
 # ---------------------------------------------------------
@@ -80,16 +80,22 @@ def create_estimate_pdf(df, params):
             return f"令和 {str_y}年 {m}月 {d}日"
         return dt_obj.strftime("%Y年 %m月 %d日")
 
+    # ★修正：安全な太字描画関数（saveState/restoreStateを使用）
     def draw_bold_string(x, y, text, size, color=colors.black):
-        c.setLineWidth(size * 0.03)
+        c.saveState() # 現在の状態（色や線の太さ）を保存
+        
+        c.setLineWidth(size * 0.03) # 太さを設定
+        
         text_obj = c.beginText(x, y)
         text_obj.setFont(FONT_NAME, size)
         text_obj.setFillColor(color)
         text_obj.setStrokeColor(color)
-        text_obj.setTextRenderMode(2)
+        text_obj.setTextRenderMode(2) # 2 = Fill + Stroke (擬似ボールド)
         text_obj.textOut(text)
+        
         c.drawText(text_obj)
-        c.setLineWidth(1); c.setFillColor(colors.black); c.setStrokeColor(colors.black); c.setTextRenderMode(0)
+        
+        c.restoreState() # 描画前の状態に戻す（これでエラー回避）
 
     def draw_bold_centered_string(x, y, text, size, color=colors.black):
         text_w = c.stringWidth(text, FONT_NAME, size)
@@ -138,7 +144,7 @@ def create_estimate_pdf(df, params):
         c.setFont(FONT_NAME, 20); c.drawString(40*mm, height - 50*mm, f"{params['client_name']}  様")
         c.setFont(FONT_NAME, 12); c.drawString(40*mm, height - 60*mm, "下記のとおり御見積申し上げます")
 
-        # 枠線（少し上に移動）
+        # 枠線
         box_top = height - 65*mm
         box_left = 40*mm; box_width = width - 80*mm; box_height = 105*mm
         box_bottom = box_top - box_height
@@ -164,7 +170,6 @@ def create_estimate_pdf(df, params):
             c.line(line_sx, curr_y-2*mm, line_ex, curr_y-2*mm)
             curr_y -= gap
 
-        # 会社情報を少し上に配置
         x_co = width - 100*mm; y_co = box_bottom - 15*mm
         wareki = to_wareki(datetime.strptime(params['date'], '%Y年 %m月 %d日'))
         c.setFont(FONT_NAME, 12); c.drawString(width - 80*mm, box_top + 5*mm, wareki)
@@ -220,64 +225,34 @@ def create_estimate_pdf(df, params):
         c.setStrokeColor(colors.black); c.setLineWidth(0.5); c.rect(x_base, hy, right_edge - x_base, header_height, stroke=1, fill=0)
         draw_vertical_lines(hy + header_height, hy)
 
-    # --- データ構造の前処理 (印刷用リストの作成) ---
-    # ここで行の種類を決定し、順番に並べます
+    # --- データ準備 ---
     print_items = []
-    
     raw_rows = df.to_dict('records')
     curr_l1, curr_l2, curr_l3, curr_l4 = "", "", "", ""
     sub_l1, sub_l2, sub_l3, sub_l4 = 0, 0, 0, 0
 
     for i, row in enumerate(raw_rows):
-        l1 = str(row.get('大項目', '')).strip()
-        l2 = str(row.get('中項目', '')).strip()
-        l3 = str(row.get('小項目', '')).strip()
-        l4 = str(row.get('部分項目', '')).strip()
-        name = str(row.get('名称', ''))
-        amt = parse_amount(row.get('(自)金額', 0))
+        l1 = str(row.get('大項目', '')).strip(); l2 = str(row.get('中項目', '')).strip()
+        l3 = str(row.get('小項目', '')).strip(); l4 = str(row.get('部分項目', '')).strip()
+        name = str(row.get('名称', '')); amt = parse_amount(row.get('(自)金額', 0))
 
-        # 変化判定
-        l1_change = (l1 and l1 != curr_l1)
-        l2_change = (l2 and l2 != curr_l2)
-        l3_change = (l3 and l3 != curr_l3)
-        l4_change = (l4 and l4 != curr_l4)
+        l1_change = (l1 and l1 != curr_l1); l2_change = (l2 and l2 != curr_l2)
+        l3_change = (l3 and l3 != curr_l3); l4_change = (l4 and l4 != curr_l4)
 
-        # --- Footer (小計) の挿入 (逆順でチェック) ---
-        # L4 部分項目 小計
         if curr_l4 and (l4_change or l3_change or l2_change or l1_change):
-             print_items.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4, 'level': 4})
-             curr_l4 = ""; sub_l4 = 0
-        
-        # L3 小項目 小計
+             print_items.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4}); curr_l4 = ""; sub_l4 = 0
         if curr_l3 and (l3_change or l2_change or l1_change):
-             print_items.append({'type': 'footer_l3', 'label': f"【{curr_l3} 小計】", 'amt': sub_l3, 'level': 3})
-             curr_l3 = ""; sub_l3 = 0
-        
-        # L2 中項目 計
+             print_items.append({'type': 'footer_l3', 'label': f"【{curr_l3} 小計】", 'amt': sub_l3}); curr_l3 = ""; sub_l3 = 0
         if curr_l2 and (l2_change or l1_change):
-             print_items.append({'type': 'footer_l2', 'label': f"【{curr_l2} 計】", 'amt': sub_l2, 'level': 2})
-             curr_l2 = ""; sub_l2 = 0
-        
-        # L1 大項目 合計
+             print_items.append({'type': 'footer_l2', 'label': f"【{curr_l2} 計】", 'amt': sub_l2}); curr_l2 = ""; sub_l2 = 0
         if curr_l1 and l1_change:
-             print_items.append({'type': 'footer_l1', 'label': f"■ {curr_l1} 合計", 'amt': sub_l1, 'level': 1})
-             curr_l1 = ""; sub_l1 = 0
+             print_items.append({'type': 'footer_l1', 'label': f"■ {curr_l1} 合計", 'amt': sub_l1}); curr_l1 = ""; sub_l1 = 0
 
-        # --- Header (見出し) の挿入 ---
-        if l1_change:
-            print_items.append({'type': 'header_l1', 'label': f"■ {l1}", 'level': 1})
-            curr_l1 = l1
-        if l2_change:
-            print_items.append({'type': 'header_l2', 'label': f"● {l2}", 'level': 2})
-            curr_l2 = l2
-        if l3_change:
-            print_items.append({'type': 'header_l3', 'label': f"・ {l3}", 'level': 3})
-            curr_l3 = l3
-        if l4_change:
-            print_items.append({'type': 'header_l4', 'label': f"【{l4}】", 'level': 4})
-            curr_l4 = l4
+        if l1_change: print_items.append({'type': 'header_l1', 'label': f"■ {l1}"}); curr_l1 = l1
+        if l2_change: print_items.append({'type': 'header_l2', 'label': f"● {l2}"}); curr_l2 = l2
+        if l3_change: print_items.append({'type': 'header_l3', 'label': f"・ {l3}"}); curr_l3 = l3
+        if l4_change: print_items.append({'type': 'header_l4', 'label': f"【{l4}】"}); curr_l4 = l4
 
-        # --- Item (明細) の挿入 ---
         if name:
             sub_l1 += amt; sub_l2 += amt; sub_l3 += amt; sub_l4 += amt
             item_data = row.copy()
@@ -286,88 +261,60 @@ def create_estimate_pdf(df, params):
             item_data['price_val'] = parse_amount(row.get('(自)単価', 0))
             print_items.append({'type': 'item', 'data': item_data})
 
-    # ループ終了後の残りの小計
-    if curr_l4: print_items.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4, 'level': 4})
-    if curr_l3: print_items.append({'type': 'footer_l3', 'label': f"【{curr_l3} 小計】", 'amt': sub_l3, 'level': 3})
-    if curr_l2: print_items.append({'type': 'footer_l2', 'label': f"【{curr_l2} 計】", 'amt': sub_l2, 'level': 2})
-    if curr_l1: print_items.append({'type': 'footer_l1', 'label': f"■ {curr_l1} 合計", 'amt': sub_l1, 'level': 1})
+    if curr_l4: print_items.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4})
+    if curr_l3: print_items.append({'type': 'footer_l3', 'label': f"【{curr_l3} 小計】", 'amt': sub_l3})
+    if curr_l2: print_items.append({'type': 'footer_l2', 'label': f"【{curr_l2} 計】", 'amt': sub_l2})
+    if curr_l1: print_items.append({'type': 'footer_l1', 'label': f"■ {curr_l1} 合計", 'amt': sub_l1})
 
-
-    # --- 描画ループ (改ページ制御) ---
-    curr_idx = 0
-    p_num = 1
+    curr_idx = 0; p_num = 1
     
     while curr_idx < len(print_items):
-        draw_header_detail(p_num)
-        y = y_start
-        
-        # 1ページの行数分描画
+        draw_header_detail(p_num); y = y_start
         for _ in range(rows_per_page):
             if curr_idx < len(print_items):
                 item = print_items[curr_idx]
                 itype = item['type']
                 
-                # 改ページ判定 (大・中項目のヘッダーが来て、ページの先頭でなければ改ページ)
-                if y != y_start and itype in ['header_l1', 'header_l2']:
-                    # ループを抜けて次のページへ
-                    break 
+                if y != y_start and itype in ['header_l1', 'header_l2']: break 
 
-                # 描画処理
-                if itype == 'header_l1':
-                    draw_bold_string(col_x['name']+2*mm, y-5*mm, item['label'], 10, COLOR_L1)
-                elif itype == 'header_l2':
-                    draw_bold_string(col_x['name']+6*mm, y-5*mm, item['label'], 10, COLOR_L2)
-                elif itype == 'header_l3':
-                    draw_bold_string(col_x['name']+10*mm, y-5*mm, item['label'], 10, COLOR_L3)
-                elif itype == 'header_l4':
-                    draw_bold_string(col_x['name']+14*mm, y-5*mm, item['label'], 9, colors.black) # 部分項目見出し
-
+                if itype == 'header_l1': draw_bold_string(col_x['name']+2*mm, y-5*mm, item['label'], 10, COLOR_L1)
+                elif itype == 'header_l2': draw_bold_string(col_x['name']+6*mm, y-5*mm, item['label'], 10, COLOR_L2)
+                elif itype == 'header_l3': draw_bold_string(col_x['name']+10*mm, y-5*mm, item['label'], 10, COLOR_L3)
+                elif itype == 'header_l4': draw_bold_string(col_x['name']+14*mm, y-5*mm, item['label'], 9, colors.black)
                 elif itype == 'item':
                     d = item['data']
                     c.setFont(FONT_NAME, 9); c.setFillColor(colors.black)
-                    c.drawString(col_x['name']+14*mm, y-5*mm, d.get('名称','')) # インデント深め
-                    c.setFont(FONT_NAME, 8)
-                    c.drawString(col_x['spec']+1*mm, y-5*mm, d.get('規格',''))
+                    c.drawString(col_x['name']+14*mm, y-5*mm, d.get('名称',''))
+                    c.setFont(FONT_NAME, 8); c.drawString(col_x['spec']+1*mm, y-5*mm, d.get('規格',''))
                     c.setFont(FONT_NAME, 9)
                     if d['qty_val']: c.drawRightString(col_x['qty']+col_widths['qty']-2*mm, y-5*mm, f"{d['qty_val']:,.2f}")
                     c.drawCentredString(col_x['unit']+col_widths['unit']/2, y-5*mm, d.get('単位',''))
                     if d['price_val']: c.drawRightString(col_x['price']+col_widths['price']-2*mm, y-5*mm, f"{int(d['price_val']):,}")
                     if d['amt_val']: c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(d['amt_val']):,}")
                     c.setFont(FONT_NAME, 8); c.drawString(col_x['rem']+1*mm, y-5*mm, d.get('備考',''))
-
                 elif itype == 'footer_l4':
-                    # 部分項目の小計
                     draw_bold_string(col_x['name']+14*mm, y-5*mm, item['label'], 9, colors.black)
                     c.setFont(FONT_NAME, 9); c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(item['amt']):,}")
-
                 elif itype == 'footer_l3':
                     draw_bold_string(col_x['name']+10*mm, y-5*mm, item['label'], 9, COLOR_L3)
-                    c.setFont(FONT_NAME, 9); c.setFillColor(colors.black) # 数字は黒
+                    c.setFont(FONT_NAME, 9); c.setFillColor(colors.black)
                     c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(item['amt']):,}")
-
                 elif itype == 'footer_l2':
                     draw_bold_string(col_x['name']+6*mm, y-5*mm, item['label'], 10, COLOR_L2)
                     c.setFont(FONT_NAME, 10); c.setFillColor(colors.black)
                     c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(item['amt']):,}")
                     c.setLineWidth(1); c.setStrokeColor(COLOR_L2); c.line(x_base, y, right_edge, y)
-
                 elif itype == 'footer_l1':
                     draw_bold_string(col_x['name']+2*mm, y-5*mm, item['label'], 10, COLOR_L1)
                     c.setFont(FONT_NAME, 10); c.setFillColor(colors.black)
                     c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(item['amt']):,}")
                     c.setLineWidth(1); c.setStrokeColor(COLOR_L1); c.line(x_base, y, right_edge, y)
                 
-                draw_grid_line(y-row_height)
-                y -= row_height
-                curr_idx += 1
+                draw_grid_line(y-row_height); y -= row_height; curr_idx += 1
             else:
-                # データなし：空行埋め
-                draw_grid_line(y-row_height)
-                y -= row_height
+                draw_grid_line(y-row_height); y -= row_height
 
-        draw_vertical_lines(y_start, y)
-        c.showPage()
-        p_num += 1
+        draw_vertical_lines(y_start, y); c.showPage(); p_num += 1
 
     c.save()
     buffer.seek(0)
