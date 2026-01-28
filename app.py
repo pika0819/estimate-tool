@@ -16,7 +16,7 @@ from datetime import datetime
 # ■ 設定エリア
 # ---------------------------------------------------------
 SHEET_NAME = "T_見積入力" 
-FONT_FILE = "ipaexg.ttf" # ※ファイル名はそのままで中身を明朝に入れ替えている想定
+FONT_FILE = "ipaexg.ttf" # ファイル名はそのままで中身は明朝(ipaexm.ttf)の想定
 FONT_NAME = "IPAexMincho" # 登録名
 
 # ---------------------------------------------------------
@@ -74,18 +74,24 @@ def create_estimate_pdf(df, params):
             return f"令和 {str_y}年 {m}月 {d}日"
         return dt_obj.strftime("%Y年 %m月 %d日")
 
-    # ★太字で文字を書く関数（重ね書きで太く見せる）
+    # ★修正箇所：太字関数の書き方を変更しました
     def draw_bold_string(x, y, text, size, color=colors.black):
-        c.setFont(FONT_NAME, size)
-        c.setFillColor(color)
-        c.setStrokeColor(color)
-        # 輪郭線を描いて太くする
-        c.setTextRenderMode(2) # Fill + Stroke
-        c.setLineWidth(size * 0.03) # 文字サイズの3%の太さ
-        c.drawString(x, y, text)
-        # 元に戻す
-        c.setTextRenderMode(0)
-        c.setLineWidth(1) # 線幅リセット
+        # 線の太さを設定（文字サイズの3%）
+        c.setLineWidth(size * 0.03)
+        
+        # テキストオブジェクトを作成して設定
+        text_obj = c.beginText(x, y)
+        text_obj.setFont(FONT_NAME, size)
+        text_obj.setFillColor(color)
+        text_obj.setStrokeColor(color)
+        text_obj.setTextRenderMode(2) # 2 = Fill + Stroke (擬似ボールド)
+        text_obj.textOut(text)
+        
+        # 描画実行
+        c.drawText(text_obj)
+        
+        # 線の太さを戻す
+        c.setLineWidth(1)
 
     def draw_bold_centered_string(x, y, text, size, color=colors.black):
         text_w = c.stringWidth(text, FONT_NAME, size)
@@ -94,7 +100,6 @@ def create_estimate_pdf(df, params):
     # 合計計算
     total_grand = df['(自)金額'].apply(parse_amount).sum()
     tax_amount = total_grand * 0.1
-    # total_with_tax = total_grand + tax_amount # 税込が必要な場合
 
     # ==========================================
     # 1ページ目：表紙 (Simple Cover)
@@ -166,28 +171,25 @@ def create_estimate_pdf(df, params):
         box_top = height - 70*mm
         box_left = 40*mm
         box_width = width - 80*mm
-        box_height = 110*mm # 枠の高さ
+        box_height = 110*mm
         box_bottom = box_top - box_height
 
-        # 二重枠
         c.setLineWidth(1.5); c.rect(box_left, box_bottom, box_width, box_height)
         c.setLineWidth(0.5); c.rect(box_left+1*mm, box_bottom+1*mm, box_width-2*mm, box_height-2*mm)
 
-        # 内容の描画
         line_start_x = box_left + 10*mm
         label_width = 30*mm
         content_start_x = line_start_x + label_width
         line_end_x = box_left + box_width - 10*mm
         
         current_y = box_top - 15*mm
-        gap = 12*mm # 行間
+        gap = 12*mm
 
         # 1. 見積金額
         draw_bold_string(line_start_x, current_y, "見積金額：", 14)
         amount_str = f"¥ {int(total_grand):,}-"
         draw_bold_string(content_start_x, current_y, amount_str, 18)
         
-        # 消費税 (別途)
         tax_str = f"(別途消費税  ¥ {int(tax_amount):,})"
         c.setFont(FONT_NAME, 12)
         c.drawString(content_start_x + c.stringWidth(amount_str, FONT_NAME, 18) + 5*mm, current_y, tax_str)
@@ -232,12 +234,12 @@ def create_estimate_pdf(df, params):
         c.drawString(content_start_x, current_y, params['expiry'])
         c.line(line_start_x, current_y - 2*mm, line_end_x, current_y - 2*mm)
 
-        # 会社情報 (右下)
+        # 会社情報
         x_co = width - 100*mm
         y_co = box_bottom - 20*mm
         wareki = to_wareki(datetime.strptime(params['date'], '%Y年 %m月 %d日'))
         c.setFont(FONT_NAME, 12)
-        c.drawString(width - 80*mm, box_top + 5*mm, wareki) # 日付は右上
+        c.drawString(width - 80*mm, box_top + 5*mm, wareki)
 
         c.setFont(FONT_NAME, 13)
         c.drawString(x_co, y_co, params['company_name'])
@@ -254,17 +256,13 @@ def create_estimate_pdf(df, params):
     # ==========================================
     # 3ページ目以降：明細 (Grid)
     # ==========================================
-    
-    # 余白調整（見切れないように少し内側に）
     x_base = 20 * mm 
     width_content = width - 40 * mm
     
-    # 列幅の定義
     col_widths = {
         'name': 90 * mm, 'spec': 60 * mm, 'qty': 20 * mm, 
-        'unit': 15 * mm, 'price': 30 * mm, 'amt': 35 * mm, 'rem': 0 * mm # 残り
+        'unit': 15 * mm, 'price': 30 * mm, 'amt': 35 * mm, 'rem': 0 * mm
     }
-    # 備考の幅を自動計算
     used_width = sum(col_widths.values())
     col_widths['rem'] = width_content - used_width
 
@@ -276,7 +274,7 @@ def create_estimate_pdf(df, params):
     right_edge = cur_x
     
     header_height = 10 * mm
-    row_height = 8 * mm # 行間広め
+    row_height = 8 * mm
     y_start = height - 30 * mm
     y = y_start
     page_num = 1
@@ -330,7 +328,7 @@ def create_estimate_pdf(df, params):
         qty = parse_amount(row.get('数量', 0)); price = parse_amount(row.get('(自)単価', 0))
         amt = parse_amount(row.get('(自)金額', 0))
 
-        # ★改ページ判定 (大項目か中項目が変わったら強制改ページ)
+        # 改ページ判定
         is_l1_change = (l1 and l1 != curr_l1)
         is_l2_change = (l2 and l2 != curr_l2)
         is_page_full = (y < 20 * mm)
@@ -341,10 +339,8 @@ def create_estimate_pdf(df, params):
             c.showPage()
             page_num += 1
             draw_header_detail(page_num)
-            # ページが変わったら罫線をリセットするために現在位置描画
-            # (ただし見出し描画ロジックが下にあるのでそちらに任せる)
 
-        # 見出し描画 (太字で強調)
+        # 見出し (太字)
         if l1 and l1 != curr_l1:
             draw_bold_string(col_x['name'] + 2*mm, y - 6*mm, f"■ {l1}", 13)
             draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
@@ -361,10 +357,10 @@ def create_estimate_pdf(df, params):
             draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
             y -= row_height; curr_l3 = l3; subtotal_l3 = 0
 
-        # 明細行 (文字サイズUP)
+        # 明細
         if name:
             subtotal_l3 += amt; subtotal_l2 += amt; subtotal_l1 += amt
-            c.setFont(FONT_NAME, 12) # 文字サイズ 12pt
+            c.setFont(FONT_NAME, 12)
             c.drawString(col_x['name'] + 12*mm, y - 6*mm, name)
             c.setFont(FONT_NAME, 10)
             c.drawString(col_x['spec'] + 1*mm, y - 6*mm, spec)
@@ -381,13 +377,12 @@ def create_estimate_pdf(df, params):
             draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
             y -= row_height
 
-        # 小計 (先読み)
+        # 小計
         next_row = rows[i+1] if i+1 < n else None
         n_l1 = str(next_row.get('大項目', '')).strip() if next_row else ""
         n_l2 = str(next_row.get('中項目', '')).strip() if next_row else ""
         n_l3 = str(next_row.get('小項目', '')).strip() if next_row else ""
 
-        # 小項目計
         if curr_l3 and (n_l3 != curr_l3 or n_l2 != curr_l2 or n_l1 != curr_l1 or not next_row):
             if subtotal_l3 > 0:
                 c.setFont(FONT_NAME, 11); c.setFillColor(colors.Color(0,0.4,0))
@@ -397,7 +392,6 @@ def create_estimate_pdf(df, params):
                 draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
                 y -= row_height
         
-        # 中項目計
         if curr_l2 and (n_l2 != curr_l2 or n_l1 != curr_l1 or not next_row):
             if subtotal_l2 > 0:
                 draw_bold_string(col_x['name'] + 6*mm, y - 6*mm, f"【{curr_l2} 計】", 11, colors.Color(0,0.4,0))
@@ -408,7 +402,6 @@ def create_estimate_pdf(df, params):
                 draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
                 y -= row_height
         
-        # 大項目計
         if curr_l1 and (n_l1 != curr_l1 or not next_row):
             if subtotal_l1 > 0:
                 draw_bold_string(col_x['name'] + 2*mm, y - 6*mm, f"■ {curr_l1} 合計", 12)
@@ -416,9 +409,7 @@ def create_estimate_pdf(df, params):
                 c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y - 6*mm, f"{int(subtotal_l1):,}")
                 c.setLineWidth(1); c.line(x_base, y, right_edge, y)
                 draw_grid_line(y - row_height); draw_vertical_lines(y, y - row_height)
-                y -= row_height; 
-                # 大項目が終わったら区切りのため少し空ける（次の改ページ判定に引っかかるかもだが）
-                y -= 3*mm
+                y -= row_height; y -= 3*mm
 
     c.drawCentredString(width/2, 10*mm, f"- {page_num} -")
     c.save()
