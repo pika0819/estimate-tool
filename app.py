@@ -19,7 +19,7 @@ SHEET_NAME = "T_見積入力"
 FONT_FILE = "NotoSerifJP-Regular.ttf" 
 FONT_NAME = "NotoSerifJP"
 
-# 配色
+# 配色 (深みのあるプロフェッショナルカラー)
 COLOR_L1 = colors.Color(0.05, 0.35, 0.25) # 深緑
 COLOR_L2 = colors.Color(0.1, 0.15, 0.45)  # 濃紺
 COLOR_L3 = colors.Color(0.6, 0.3, 0.1)    # テラコッタ
@@ -27,19 +27,19 @@ COLOR_TEXT = colors.black
 COLOR_TOTAL = colors.Color(0.7, 0.1, 0.15) # 深紅
 COLOR_ACCENT_BLUE = colors.Color(0.15, 0.25, 0.55)
 
-# ★サイズ設定 (文字は大きく、行間は少し詰めてページ溢れ防止)
-ROW_HEIGHT = 8.5 * mm        # 行の高さ (9.0 -> 8.5)
-FONT_SIZE_ITEM = 10.5        # 明細文字サイズ
-FONT_SIZE_HEADER = 11.5      # 見出し文字サイズ
-FONT_SIZE_TITLE = 16         # タイトル
+# サイズ設定 (Ver.17準拠)
+ROW_HEIGHT = 9.0 * mm 
+FONT_SIZE_ITEM = 10.5
+FONT_SIZE_HEADER = 12
+FONT_SIZE_TITLE = 16
 
-# インデント幅 (元に戻してスッキリさせる)
+# インデント幅
 INDENT_L1 = 1.0 * mm
 INDENT_L2 = 2.5 * mm
 INDENT_L3 = 4.5 * mm
 INDENT_ITEM = 6.0 * mm
 
-# 表示順設定
+# ★ 表示順設定
 SORT_ORDER = {
     "建築工事": [
         "共通仮設工事", "直接仮設工事", "特殊基礎工事", "基礎工事", 
@@ -132,8 +132,7 @@ def create_estimate_pdf(df, params):
     for k in col_widths.keys(): col_x[k] = curr_x; curr_x += col_widths[k]
     right_edge = curr_x
     
-    header_height = 9 * mm; 
-    # ★重要: マージンを少し詰めて、あと1行が入るように調整
+    header_height = 9 * mm
     top_margin = 35 * mm; bottom_margin = 20 * mm 
     y_start = height - top_margin
     rows_per_page = int((height - top_margin - bottom_margin) / ROW_HEIGHT)
@@ -198,7 +197,6 @@ def create_estimate_pdf(df, params):
         box_top = height - 65*mm
         box_left = 30*mm; box_width = width - 60*mm; box_height = 120*mm
         box_bottom = box_top - box_height
-        
         c.setLineWidth(1.5); c.rect(box_left, box_bottom, box_width, box_height)
         c.setLineWidth(0.5); c.rect(box_left+1.5*mm, box_bottom+1.5*mm, box_width-3*mm, box_height-3*mm)
 
@@ -251,7 +249,7 @@ def create_estimate_pdf(df, params):
             l1_name = row['大項目']; amount = row['(自)金額']
             if not l1_name: continue
             draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"■ {l1_name}", FONT_SIZE_HEADER, COLOR_L1)
-            c.setFont(FONT_NAME, FONT_SIZE_HEADER); c.setFillColor(COLOR_L1)
+            c.setFont(FONT_NAME, FONT_SIZE_HEADER); c.setFillColor(COLOR_L1) # ★金額も色付け
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(amount):,}")
             draw_grid_line(y - ROW_HEIGHT); y -= ROW_HEIGHT
         
@@ -322,7 +320,7 @@ def create_estimate_pdf(df, params):
                 draw_grid_line(y - ROW_HEIGHT); y -= ROW_HEIGHT
             
             draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"【{l1_name} 計】", FONT_SIZE_HEADER, COLOR_L1)
-            c.setFont(FONT_NAME, FONT_SIZE_HEADER); c.setFillColor(COLOR_L1)
+            c.setFont(FONT_NAME, FONT_SIZE_HEADER); c.setFillColor(COLOR_L1) # ★金額も色付け
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(l1_total):,}")
             draw_grid_line(y - ROW_HEIGHT); y -= ROW_HEIGHT
             is_first_block = False
@@ -368,7 +366,6 @@ def create_estimate_pdf(df, params):
                 else:
                     draw_grid_line(y - ROW_HEIGHT); y -= ROW_HEIGHT
 
-            # 大項目ヘッダー
             if y <= bottom_margin + ROW_HEIGHT:
                 draw_vertical_lines(y_start, y); c.showPage()
                 p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
@@ -414,7 +411,6 @@ def create_estimate_pdf(df, params):
                 
                 is_last_l2 = (i_l2 == len(sorted_l2) - 1)
                 
-                # ★修正: L1計をブロックに含める
                 if is_last_l2:
                     block_items.append({'type': 'footer_l1', 'label': f"■ {l1} 合計", 'amt': l1_total})
                 else:
@@ -426,7 +422,12 @@ def create_estimate_pdf(df, params):
                 rows_needed = len(block_items)
                 rows_remaining = int((y - bottom_margin) / ROW_HEIGHT)
                 
-                if rows_needed > rows_remaining and y < y_start:
+                # ★Ver.17ロジック：残り行数 < 必要行数 なら強制改ページ
+                footer_lines_needed = 1
+                if is_last_l2: footer_lines_needed = 2
+                
+                # フッターがページ内に入りきらない、またはブロック全体が入らない場合は改ページ
+                if (rows_remaining < footer_lines_needed) or (rows_needed > rows_remaining and y < y_start):
                     while y > bottom_margin + 0.1: draw_grid_line(y - ROW_HEIGHT); y -= ROW_HEIGHT
                     draw_vertical_lines(y_start, y); c.showPage()
                     p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
@@ -475,16 +476,16 @@ def create_estimate_pdf(df, params):
                         c.setFont(FONT_NAME, FONT_SIZE_ITEM); c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")
                     elif itype == 'footer_l3':
                         draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, b['label'], FONT_SIZE_HEADER, COLOR_L3)
-                        c.setFont(FONT_NAME, FONT_SIZE_HEADER); c.setFillColor(COLOR_L3)
+                        c.setFont(FONT_NAME, FONT_SIZE_HEADER); c.setFillColor(COLOR_L3) # ★金額色付け
                         c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")
                     elif itype == 'footer_l2':
                         draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, b['label'], FONT_SIZE_HEADER, COLOR_L2)
-                        c.setFont(FONT_NAME, FONT_SIZE_HEADER); c.setFillColor(COLOR_L2)
+                        c.setFont(FONT_NAME, FONT_SIZE_HEADER); c.setFillColor(COLOR_L2) # ★金額色付け
                         c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")
                         c.setLineWidth(1); c.setStrokeColor(COLOR_L2); c.line(x_base, y, right_edge, y)
                     elif itype == 'footer_l1':
                         draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, b['label'], FONT_SIZE_HEADER, COLOR_L1)
-                        c.setFont(FONT_NAME, FONT_SIZE_HEADER); c.setFillColor(COLOR_L1)
+                        c.setFont(FONT_NAME, FONT_SIZE_HEADER); c.setFillColor(COLOR_L1) # ★金額色付け
                         c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")
                         c.setLineWidth(1); c.setStrokeColor(COLOR_L1); c.line(x_base, y, right_edge, y)
                     elif itype == 'empty_row': pass
