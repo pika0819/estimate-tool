@@ -243,7 +243,6 @@ def create_estimate_pdf(df, params):
             l1_name = row['大項目']; amount = row['(自)金額']
             if not l1_name: continue
             draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"■ {l1_name}", 10, COLOR_L1)
-            # 色付きリクエスト対応：項目が色付きなら金額も
             c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L1) 
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(amount):,}")
             draw_grid_line(y - row_height); y -= row_height
@@ -310,7 +309,6 @@ def create_estimate_pdf(df, params):
             for l2_name in sorted_l2_keys:
                 l2_amt = l2_items[l2_name]
                 draw_bold_string(col_x['name'] + INDENT_L2, y-5*mm, f"● {l2_name}", 10, COLOR_L2)
-                # 色付きリクエスト対応
                 c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L2)
                 c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(l2_amt):,}")
                 draw_grid_line(y - row_height); y -= row_height
@@ -324,7 +322,7 @@ def create_estimate_pdf(df, params):
         while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
         draw_vertical_lines(y_start, y); c.showPage(); return p_num + 1
 
-    # 5. 明細書（バグ修正版）
+    # 5. 明細書（バグ修正済み：ヘッダー制御＆合計行の吸着強化）
     def draw_details(start_p_num):
         p_num = start_p_num
         data_tree = {}
@@ -434,7 +432,6 @@ def create_estimate_pdf(df, params):
                     elif itype == 'footer_l4': active_l4_label = None
 
                     # --- 改ページ判定 ---
-                    # 大項目計(footer_l1)は絶対に改ページさせない
                     force_stay = (itype == 'footer_l1')
 
                     if y <= bottom_margin and not force_stay:
@@ -445,7 +442,6 @@ def create_estimate_pdf(df, params):
                         draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1} (続き)", 10, COLOR_L1)
                         draw_grid_line(y - row_height); y -= row_height
                         
-                        # 不要なヘッダー(フライング)防止
                         if l2_has_started and itype != 'footer_l1':
                             draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, f"● {l2} (続き)", 10, COLOR_L2)
                             draw_grid_line(y - row_height); y -= row_height
@@ -458,7 +454,7 @@ def create_estimate_pdf(df, params):
                             draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, f"{active_l4_label} (続き)", 9, colors.black)
                             draw_grid_line(y - row_height); y -= row_height
 
-                    # 底打ちロジック (伝統的な下揃え)
+                    # 底打ちロジック
                     if itype in ['footer_l2', 'footer_l1']:
                         target_row_from_bottom = 0
                         if itype == 'footer_l2' and is_last_l2: target_row_from_bottom = 1
@@ -507,8 +503,6 @@ def create_estimate_pdf(df, params):
                     draw_grid_line(y - row_height); y -= row_height
 
         while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
-        
-        # 縦線の終点を調整 (はみ出し対応)
         final_line_y = min(y, bottom_margin)
         draw_vertical_lines(y_start, final_line_y)
         
