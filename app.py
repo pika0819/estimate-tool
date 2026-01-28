@@ -166,12 +166,16 @@ def create_estimate_pdf(df, params):
             c.line(col_x[k], y_top, col_x[k], y_bottom)
         c.line(right_edge, y_top, right_edge, y_bottom)
         
-        # 横線を描画（行単位）
+        # 横線を描画（行単位） - 最下部の線も含める
         current_y = y_top
-        while current_y >= y_bottom:
+        while current_y > y_bottom - 0.1:  # 微小な誤差を考慮
             c.setStrokeColor(colors.black)
             c.line(x_base, current_y, right_edge, current_y)
             current_y -= row_height
+        
+        # ★最下部の横線を確実に描画
+        c.setStrokeColor(colors.black)
+        c.line(x_base, y_bottom, right_edge, y_bottom)
         
         c.restoreState()
     
