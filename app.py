@@ -322,7 +322,7 @@ def create_estimate_pdf(df, params):
         while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
         draw_vertical_lines(y_start, y); c.showPage(); return p_num + 1
 
-    # 5. 明細書（バグ修正済み：ヘッダー制御＆合計行の吸着強化）
+# 5. 明細書（修正版：ヘッダーの「続き」判定タイミングを適正化）
     def draw_details(start_p_num):
         p_num = start_p_num
         data_tree = {}
@@ -425,11 +425,9 @@ def create_estimate_pdf(df, params):
                 for b in block_items:
                     itype = b['type']
                     
-                    if itype == 'header_l2': l2_has_started = True
-                    elif itype == 'header_l3': active_l3_label = b['label']
-                    elif itype == 'footer_l3': active_l3_label = None
-                    elif itype == 'header_l4': active_l4_label = b['label']
-                    elif itype == 'footer_l4': active_l4_label = None
+                    # ★修正: 状態更新（フラグ立て）をここで行わず、描画後に移動しました。
+                    # これにより、ヘッダー行で改ページが起きても「まだ始まってない」と判定され、
+                    # 「(続き)」が表示されなくなります。
 
                     # --- 改ページ判定 ---
                     force_stay = (itype == 'footer_l1')
@@ -442,6 +440,7 @@ def create_estimate_pdf(df, params):
                         draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1} (続き)", 10, COLOR_L1)
                         draw_grid_line(y - row_height); y -= row_height
                         
+                        # 項目がすでに始まっている場合のみ (続き) を表示
                         if l2_has_started and itype != 'footer_l1':
                             draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, f"● {l2} (続き)", 10, COLOR_L2)
                             draw_grid_line(y - row_height); y -= row_height
@@ -502,6 +501,13 @@ def create_estimate_pdf(df, params):
 
                     draw_grid_line(y - row_height); y -= row_height
 
+                    # ★修正: 状態更新をループの最後に移動
+                    if itype == 'header_l2': l2_has_started = True
+                    elif itype == 'header_l3': active_l3_label = b['label']
+                    elif itype == 'footer_l3': active_l3_label = None
+                    elif itype == 'header_l4': active_l4_label = b['label']
+                    elif itype == 'footer_l4': active_l4_label = None
+
         while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
         final_line_y = min(y, bottom_margin)
         draw_vertical_lines(y_start, final_line_y)
@@ -555,3 +561,4 @@ if st.button("作成開始", type="primary"):
                 if pdf_bytes:
                     st.success("完了")
                     st.download_button("ダウンロード", pdf_bytes, f"見積書_{client_name}.pdf", "application/pdf")
+
