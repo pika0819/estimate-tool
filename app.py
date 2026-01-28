@@ -17,16 +17,17 @@ from datetime import datetime
 # ---------------------------------------------------------
 SHEET_NAME = "T_見積入力" 
 
-# ★変更: Noto Serif JP Regular (TTF) を使用
+# Noto Serif JP Regular (TTF) を使用
 FONT_FILE = "NotoSerifJP-Regular.ttf" 
 FONT_NAME = "NotoSerifJP"
 
-# 色設定
-COLOR_L1 = colors.Color(0, 0.4, 0)      # 緑
-COLOR_L2 = colors.Color(0, 0, 0.6)      # 紺
-COLOR_L3 = colors.Color(0.8, 0.3, 0)    # オレンジ
+# ★変更: 配色センスの改善 (深みのある落ち着いたプロフェッショナルカラー)
+COLOR_L1 = colors.Color(0.05, 0.35, 0.25) # 深いダークグリーン (信頼感)
+COLOR_L2 = colors.Color(0.1, 0.15, 0.45)  # 濃いネイビー (知的さ)
+COLOR_L3 = colors.Color(0.6, 0.3, 0.1)    # 落ち着いたテラコッタ (アクセント)
 COLOR_TEXT = colors.black
-COLOR_TOTAL = colors.Color(0.8, 0, 0)   # 赤
+COLOR_TOTAL = colors.Color(0.7, 0.1, 0.15) # 深みのあるディープレッド (品位ある強調)
+COLOR_ACCENT_BLUE = colors.Color(0.15, 0.25, 0.55) # 表紙などで使うアクセントカラー
 
 # インデント幅
 INDENT_L1 = 1.0 * mm
@@ -128,7 +129,6 @@ def create_estimate_pdf(df, params):
     right_edge = curr_x
     
     header_height = 9 * mm; row_height = 7 * mm
-    # ★重要: 安全マージンを少し広げて限界突破を阻止
     top_margin = 35 * mm; bottom_margin = 22 * mm 
     y_start = height - top_margin
     rows_per_page = int((height - top_margin - bottom_margin) / row_height)
@@ -161,9 +161,9 @@ def create_estimate_pdf(df, params):
 
     # 1. 表紙
     def draw_page1():
-        draw_bold_centered_string(width/2, height - 60*mm, "御   見   積   書", 50, colors.darkblue)
+        draw_bold_centered_string(width/2, height - 60*mm, "御   見   積   書", 50, COLOR_ACCENT_BLUE)
         lw = 140*mm; lx = (width - lw)/2; ly = height - 65*mm
-        c.setStrokeColor(colors.darkblue); c.setLineWidth(2); c.line(lx, ly, lx+lw, ly)
+        c.setStrokeColor(COLOR_ACCENT_BLUE); c.setLineWidth(2); c.line(lx, ly, lx+lw, ly)
         c.setLineWidth(0.5); c.line(lx, ly-2*mm, lx+lw, ly-2*mm)
         c.setFillColor(colors.black); c.setStrokeColor(colors.black)
 
@@ -218,7 +218,8 @@ def create_estimate_pdf(df, params):
             c.line(line_sx, curr_y-2*mm, line_ex, curr_y-2*mm)
             curr_y -= gap
 
-        x_co = width - 100*mm; y_co = box_bottom - 20*mm
+        # ★変更: 会社情報位置を上に調整
+        x_co = width - 100*mm; y_co = box_bottom + 15*mm 
         wareki = to_wareki(datetime.strptime(params['date'], '%Y年 %m月 %d日'))
         c.setFont(FONT_NAME, 12); c.drawString(width - 80*mm, box_top + 5*mm, wareki)
         c.setFont(FONT_NAME, 13); c.drawString(x_co, y_co, params['company_name'])
@@ -353,7 +354,6 @@ def create_estimate_pdf(df, params):
             sorted_l2 = sorted(l2_dict.keys(), key=lambda k: l2_order.index(k) if k in l2_order else 999)
 
             if not is_first_l1:
-                # 前のL1との間に空行を入れるか判断
                 if y <= bottom_margin + row_height * 2:
                     while y > bottom_margin + 0.1: draw_grid_line(y-row_height); y -= row_height
                     draw_vertical_lines(y_start, y); c.showPage()
@@ -361,7 +361,6 @@ def create_estimate_pdf(df, params):
                 else:
                     draw_grid_line(y - row_height); y -= row_height
 
-            # 大項目ヘッダー
             if y <= bottom_margin + row_height:
                 draw_vertical_lines(y_start, y); c.showPage()
                 p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
@@ -411,10 +410,12 @@ def create_estimate_pdf(df, params):
                 
                 while block_items and block_items[-1]['type'] == 'empty_row': block_items.pop()
 
-                # ブロック計算
-                rows_needed = len(block_items)
+                # ★ブロック計算（大項目計まで考慮）
+                extra_lines = 1 if is_last_l2 else 0 # 大項目計の1行分
+                rows_needed = len(block_items) + extra_lines
                 rows_remaining = int((y - bottom_margin) / row_height)
                 
+                # 入りきらない場合は、ページの途中でも改ページ
                 if rows_needed > rows_remaining and y < y_start:
                     while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
                     draw_vertical_lines(y_start, y); c.showPage()
@@ -445,7 +446,7 @@ def create_estimate_pdf(df, params):
                         c.setFont(FONT_NAME, 9); c.setFillColor(colors.black)
                         c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")
                     elif itype == 'footer_l2':
-                        # ★最下部固定 (L2計) - ページ残りが少ない場合は改ページしてから最下部へ？いや、ブロック計算で入ること確定しているので埋めるだけ
+                        # ★最下部固定 (L2計)
                         target_idx_from_bottom = 0
                         if is_last_l2: target_idx_from_bottom = 1 
                         target_y = bottom_margin + (target_idx_from_bottom * row_height)
