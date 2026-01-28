@@ -15,7 +15,8 @@ from datetime import datetime
 # ---------------------------------------------------------
 # ■ 設定エリア
 # ---------------------------------------------------------
-SHEET_NAME = "T_見積入力" 
+ESTIMATE_SHEET_NAME = "T_見積入力"
+INFO_SHEET_NAME = "現場情報"
 FONT_FILE = "NotoSerifJP-Regular.ttf" 
 FONT_NAME = "NotoSerifJP"
 
@@ -54,33 +55,72 @@ SORT_ORDER = {
 # ---------------------------------------------------------
 # 1. データ取得
 # ---------------------------------------------------------
-def get_data_from_url(sheet_url):
+def load_data_from_spreadsheet(sheet_url):
     try:
         match = re.search(r"/d/([a-zA-Z0-9-_]+)", sheet_url)
         if not match:
             st.error("URLの形式が正しくありません。")
-            return None
+            return None, None
         spreadsheet_key = match.group(1)
+        
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        # secretsから認証情報を取得
         creds_dict = dict(st.secrets["gcp_service_account"])
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
-        sheet = client.open_by_key(spreadsheet_key).worksheet(SHEET_NAME)
-        data = sheet.get_all_values()
-        df = pd.DataFrame(data[1:], columns=data[0])
-        return df
+        
+        # スプレッドシートを開く
+        wb = client.open_by_key(spreadsheet_key)
+        
+        # --- 1. 見積データの取得 ---
+        sheet_est = wb.worksheet(ESTIMATE_SHEET_NAME)
+        data_est = sheet_est.get_all_values()
+        df_est = pd.DataFrame(data_est[1:], columns=data_est[0])
+
+        # --- 2. 現場情報の取得 ---
+        sheet_info = wb.worksheet(INFO_SHEET_NAME)
+        data_info = sheet_info.get_all_values()
+        # A列(項目)=key, B列(内容)=value の辞書を作成
+        info_dict = {}
+        for row in data_info:
+            if len(row) >= 2:
+                key = str(row[0]).strip()
+                val = str(row[1]).strip()
+                if key:
+                    info_dict[key] = val
+        
+        return df_est, info_dict
+
     except Exception as e:
         st.error(f"読み込みエラー: {e}")
-        return None
+        return None, None
 
 # ---------------------------------------------------------
 # 2. PDF生成エンジン
 # ---------------------------------------------------------
-def create_estimate_pdf(df, params):
+def create_estimate_pdf(df, info_dict):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=landscape(A4))
     width, height = landscape(A4)
     
+    # 現場情報辞書からパラメータを展開
+    # 辞書のキーがシートのA列と一致している必要があります
+    params = {
+        'client_name': info_dict.get('施主名', ''),
+        'project_name': info_dict.get('工事名', ''),
+        'location': info_dict.get('工事場所', ''),
+        'term': info_dict.get('工期', ''),
+        'expiry': info_dict.get('見積もり書有効期限', ''),
+        'date': info_dict.get('発行日', ''),
+        'company_name': info_dict.get('会社名', ''),
+        'ceo': info_dict.get('代表取締役', ''),
+        'address': info_dict.get('住所', ''),
+        'phone': info_dict.get('電話番号', ''),
+        'fax': info_dict.get('FAX番号', ''),
+        # 仕様などはファイル名生成に使うためparamsには含めなくても良いが念のため
+        'spec': info_dict.get('見積もり仕様', '')
+    }
+
     try:
         pdfmetrics.registerFont(TTFont(FONT_NAME, FONT_FILE))
     except:
@@ -91,12 +131,23 @@ def create_estimate_pdf(df, params):
         try: return float(str(val).replace('¥', '').replace(',', ''))
         except: return 0.0
 
-    def to_wareki(dt_obj):
-        y = dt_obj.year; m = dt_obj.month; d = dt_obj.day
-        if y >= 2019:
-            r_y = y - 2018
-            return f"令和 {r_y}年 {m}月 {d}日" if r_y != 1 else f"令和 元年 {m}月 {d}日"
-        return dt_obj.strftime("%Y年 %m月 %d日")
+    def to_wareki(date_str):
+        # 日付文字列(例: 2025/12/20, 2025-12-20, 令和7年...)を解析して和暦表示にする
+        # シートに入力された文字列をそのまま使う場合はそのままでOKだが、
+        # YYYY/MM/DD形式の場合は変換するロジック
+        try:
+            # スラッシュやハイフン区切りの場合のみ変換を試みる
+            if '/' in date_str or '-' in date_str:
+                dt_obj = pd.to_datetime(date_str)
+                y = dt_obj.year; m = dt_obj.month; d = dt_obj.day
+                if y >= 2019:
+                    r_y = y - 2018
+                    return f"令和 {r_y}年 {m}月 {d}日" if r_y != 1 else f"令和 元年 {m}月 {d}日"
+                return dt_obj.strftime("%Y年 %m月 %d日")
+            else:
+                return date_str # 既に「令和〇年...」と入っている場合はそのまま返す
+        except:
+            return date_str
 
     def draw_bold_string(x, y, text, size, color=colors.black):
         c.saveState()
@@ -127,7 +178,9 @@ def create_estimate_pdf(df, params):
     right_edge = curr_x
     
     header_height = 9 * mm; row_height = 7 * mm
-    top_margin = 35 * mm; bottom_margin = 22 * mm 
+    top_margin = 35 * mm; 
+    bottom_margin = 21 * mm 
+    
     y_start = height - top_margin
     rows_per_page = int((height - top_margin - bottom_margin) / row_height)
 
@@ -170,7 +223,7 @@ def create_estimate_pdf(df, params):
         draw_bold_centered_string(width/2, height - 140*mm, f"{params['project_name']}", 24)
         c.setLineWidth(0.5); c.line(width/2 - 80*mm, height - 142*mm, width/2 + 80*mm, height - 142*mm)
         
-        wareki = to_wareki(datetime.strptime(params['date'], '%Y年 %m月 %d日'))
+        wareki = to_wareki(params['date'])
         c.setFont(FONT_NAME, 14); c.drawString(40*mm, 50*mm, wareki)
         x_co = width - 100*mm; y_co = 50*mm
         draw_bold_string(x_co, y_co, params['company_name'], 18)
@@ -223,7 +276,7 @@ def create_estimate_pdf(df, params):
         c.setFont(FONT_NAME, 10); c.drawString(x_co, y_co + 5*mm, f"〒 {params['address']}")
         c.drawString(x_co, y_co, f"TEL {params['phone']}  FAX {params['fax']}")
 
-        wareki = to_wareki(datetime.strptime(params['date'], '%Y年 %m月 %d日'))
+        wareki = to_wareki(params['date'])
         c.setFont(FONT_NAME, 12); c.drawString(width - 80*mm, box_top + 5*mm, wareki)
         c.showPage()
 
@@ -322,7 +375,7 @@ def create_estimate_pdf(df, params):
         while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
         draw_vertical_lines(y_start, y); c.showPage(); return p_num + 1
 
-# 5. 明細書（修正版：ヘッダーの「続き」判定タイミングを適正化）
+    # 5. 明細書
     def draw_details(start_p_num):
         p_num = start_p_num
         data_tree = {}
@@ -352,10 +405,9 @@ def create_estimate_pdf(df, params):
             sorted_l2 = sorted(l2_dict.keys(), key=lambda k: l2_order.index(k) if k in l2_order else 999)
 
             if not is_first_l1:
-                # 前のL1との間に空行を入れるか判断
                 if y <= bottom_margin + row_height * 2:
                     while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
-                    draw_vertical_lines(y_start, y)
+                    draw_vertical_lines(y_start, bottom_margin)
                     c.showPage()
                     p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
                 else:
@@ -364,7 +416,7 @@ def create_estimate_pdf(df, params):
             # 大項目ヘッダー
             if y <= bottom_margin + row_height:
                 while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
-                draw_vertical_lines(y_start, y)
+                draw_vertical_lines(y_start, bottom_margin)
                 c.showPage()
                 p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
             
@@ -409,7 +461,6 @@ def create_estimate_pdf(df, params):
                 
                 is_last_l2 = (i_l2 == len(sorted_l2) - 1)
                 
-                # 最後の中項目なら、このブロックに大項目の合計も追加
                 if is_last_l2:
                      block_items.append({'type': 'footer_l1', 'label': f"【{l1} 計】", 'amt': l1_total})
                 else:
@@ -424,23 +475,25 @@ def create_estimate_pdf(df, params):
                 # 描画ループ
                 for b in block_items:
                     itype = b['type']
-                    
-                    # ★修正: 状態更新（フラグ立て）をここで行わず、描画後に移動しました。
-                    # これにより、ヘッダー行で改ページが起きても「まだ始まってない」と判定され、
-                    # 「(続き)」が表示されなくなります。
 
-                    # --- 改ページ判定 ---
+                    # 改ページ判定
                     force_stay = (itype == 'footer_l1')
+                    
+                    if y - row_height < bottom_margin - 0.1 and not force_stay:
+                        # ページ下部を空行で埋める
+                        temp_y = y
+                        while temp_y > bottom_margin + 0.1:
+                            draw_grid_line(temp_y - row_height)
+                            temp_y -= row_height
 
-                    if y <= bottom_margin and not force_stay:
-                        draw_vertical_lines(y_start, y) 
+                        draw_vertical_lines(y_start, bottom_margin) 
+                        
                         c.showPage()
                         p_num += 1; draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)"); y = y_start
                         
                         draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1} (続き)", 10, COLOR_L1)
                         draw_grid_line(y - row_height); y -= row_height
                         
-                        # 項目がすでに始まっている場合のみ (続き) を表示
                         if l2_has_started and itype != 'footer_l1':
                             draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, f"● {l2} (続き)", 10, COLOR_L2)
                             draw_grid_line(y - row_height); y -= row_height
@@ -453,7 +506,7 @@ def create_estimate_pdf(df, params):
                             draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, f"{active_l4_label} (続き)", 9, colors.black)
                             draw_grid_line(y - row_height); y -= row_height
 
-                    # 底打ちロジック
+                    # 底打ちロジック (footerのみ)
                     if itype in ['footer_l2', 'footer_l1']:
                         target_row_from_bottom = 0
                         if itype == 'footer_l2' and is_last_l2: target_row_from_bottom = 1
@@ -501,7 +554,6 @@ def create_estimate_pdf(df, params):
 
                     draw_grid_line(y - row_height); y -= row_height
 
-                    # ★修正: 状態更新をループの最後に移動
                     if itype == 'header_l2': l2_has_started = True
                     elif itype == 'header_l3': active_l3_label = b['label']
                     elif itype == 'footer_l3': active_l3_label = None
@@ -509,8 +561,7 @@ def create_estimate_pdf(df, params):
                     elif itype == 'footer_l4': active_l4_label = None
 
         while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
-        final_line_y = min(y, bottom_margin)
-        draw_vertical_lines(y_start, final_line_y)
+        draw_vertical_lines(y_start, bottom_margin)
         
         c.showPage(); p_num += 1
         return p_num
@@ -532,33 +583,22 @@ def create_estimate_pdf(df, params):
 st.set_page_config(layout="wide")
 st.title("📄 自動見積書作成システム")
 
-with st.sidebar:
-    st.header("📝 情報入力")
-    sheet_url = st.text_input("スプレッドシートURL", placeholder="https://docs.google.com/...")
-    client_name = st.text_input("施主名", value="")
-    project_name = st.text_input("工事名", value="住宅新築工事")
-    st.markdown("---")
-    location = st.text_input("工事場所", value="木曽郡木曽町...")
-    term = st.text_input("工期", value="令和 7年 12月 20日")
-    expiry = st.text_input("有効期限", value="2ヶ月")
-    target_date = st.date_input("発行日", value=datetime.today())
-    st.markdown("---")
-    company_name = st.text_input("会社名", value="株式会社 〇〇工務店")
-    ceo_name = st.text_input("代表取締役", value="〇〇 〇〇")
-    address = st.text_input("住所", value="長野県木曽郡〇〇町...")
-    phone = st.text_input("電話番号", value="0264-xx-xxxx")
-    fax = st.text_input("FAX番号", value="0264-xx-xxxx")
-
 if st.button("作成開始", type="primary"):
-    if not sheet_url or not client_name:
-        st.error("URLと施主名は必須です。")
+    if "spreadsheet" not in st.secrets or "url" not in st.secrets["spreadsheet"]:
+        st.error("secrets.toml に [spreadsheet] url が設定されていません。")
     else:
+        sheet_url = st.secrets["spreadsheet"]["url"]
         with st.spinner('PDF生成中...'):
-            df = get_data_from_url(sheet_url)
-            if df is not None:
-                params = {'client_name': client_name, 'project_name': project_name, 'location': location, 'term': term, 'expiry': expiry, 'date': target_date.strftime('%Y年 %m月 %d日'), 'company_name': company_name, 'ceo': ceo_name, 'address': address, 'phone': phone, 'fax': fax}
-                pdf_bytes = create_estimate_pdf(df, params)
+            df, info_dict = load_data_from_spreadsheet(sheet_url)
+            if df is not None and info_dict is not None:
+                pdf_bytes = create_estimate_pdf(df, info_dict)
                 if pdf_bytes:
+                    # ファイル名生成
+                    date_str = info_dict.get('発行日', '00000000').replace('/', '').replace('-', '').replace('年', '').replace('月', '').replace('日', '')
+                    client_name = info_dict.get('施主名', 'Unknown')
+                    project_name = info_dict.get('工事名', 'Unknown')
+                    spec = info_dict.get('見積もり仕様', '見積')
+                    file_name = f"{date_str}_{client_name}_{project_name}_{spec}.pdf"
+                    
                     st.success("完了")
-                    st.download_button("ダウンロード", pdf_bytes, f"見積書_{client_name}.pdf", "application/pdf")
-
+                    st.download_button("ダウンロード", pdf_bytes, file_name, "application/pdf")
