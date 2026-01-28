@@ -528,8 +528,9 @@ def create_estimate_pdf(df, params):
                     elif itype == 'header_l4': active_l4_label = b['label']
                     elif itype == 'footer_l4': active_l4_label = None
 
+# --- 修正: ループ終了後、最終的な y 座標まで縦線を引く ---
         while y > bottom_margin + 0.1: draw_grid_line(y - row_height); y -= row_height
-        draw_vertical_lines(y_start, bottom_margin)
+        draw_vertical_lines(y_start, y) # bottom_marginではなく現在のyまで引く
         c.showPage(); p_num += 1
         return p_num
 
@@ -617,3 +618,4 @@ else:
             st.session_state.pdf_ready = False
             st.session_state.pdf_data = None
             st.rerun()
+
