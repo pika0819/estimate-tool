@@ -127,7 +127,9 @@ def create_estimate_pdf(df, params):
         c.drawCentredString(width/2, hy, title)
         c.setLineWidth(0.5); c.line(width/2 - tw/2 - 5*mm, hy - 2*mm, width/2 + tw/2 + 5*mm, hy - 2*mm)
         c.setFont(FONT_NAME, 10); c.drawRightString(right_edge, hy, params['company_name'])
-        c.drawRightString(right_edge, 10*mm, f"- {p_num} -")
+        
+        # ★ページ番号を中央下に変更
+        c.drawCentredString(width/2, 10*mm, f"- {p_num} -")
 
         hy_grid = y_start
         c.setFillColor(colors.Color(0.95, 0.95, 0.95)); c.rect(x_base, hy_grid, right_edge - x_base, header_height, fill=1, stroke=0)
@@ -161,7 +163,7 @@ def create_estimate_pdf(df, params):
         if params['fax']: c.drawString(x_co + 40*mm, y_co - 26*mm, f"FAX: {params['fax']}")
         c.showPage()
 
-    # 2. 概要 (枠外配置調整)
+    # 2. 概要
     def draw_page2():
         draw_bold_centered_string(width/2, height - 30*mm, "御   見   積   書", 32)
         c.setLineWidth(1); c.line(width/2 - 60*mm, height - 32*mm, width/2 + 60*mm, height - 32*mm)
@@ -200,7 +202,7 @@ def create_estimate_pdf(df, params):
             c.line(line_sx, curr_y-2*mm, line_ex, curr_y-2*mm)
             curr_y -= gap
 
-        x_co = width - 100*mm; y_co = box_bottom - 20*mm
+        x_co = width - 100*mm; y_co = box_bottom + 20*mm
         wareki = to_wareki(datetime.strptime(params['date'], '%Y年 %m月 %d日'))
         c.setFont(FONT_NAME, 12); c.drawString(width - 80*mm, box_top + 5*mm, wareki)
         c.setFont(FONT_NAME, 13); c.drawString(x_co, y_co, params['company_name'])
@@ -209,7 +211,7 @@ def create_estimate_pdf(df, params):
         c.drawString(x_co, y_co - 19*mm, f"TEL {params['phone']}  FAX {params['fax']}")
         c.showPage()
 
-    # 3. 大項目集計 (ボトム固定)
+    # 3. 大項目集計
     def draw_page3_l1_summary(p_num):
         draw_page_header_common(p_num)
         y = y_start
@@ -238,7 +240,7 @@ def create_estimate_pdf(df, params):
             
         draw_vertical_lines(y_start, y); c.showPage(); return p_num + 1
 
-    # 4. 明細書 (底打ちロジック追加)
+    # 4. 明細書
     def draw_details(start_p_num):
         p_num = start_p_num
         print_items = []
@@ -254,6 +256,7 @@ def create_estimate_pdf(df, params):
             l1_chg = (l1 and l1 != curr_l1); l2_chg = (l2 and l2 != curr_l2)
             l3_chg = (l3 and l3 != curr_l3); l4_chg = (l4 and l4 != curr_l4)
 
+            # Footer
             if curr_l4 and (l4_chg or l3_chg or l2_chg or l1_chg):
                  print_items.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4}); curr_l4 = ""; sub_l4 = 0
             if curr_l3 and (l3_chg or l2_chg or l1_chg):
@@ -263,6 +266,7 @@ def create_estimate_pdf(df, params):
             if curr_l1 and l1_chg:
                  print_items.append({'type': 'footer_l1', 'label': f"■ {curr_l1} 合計", 'amt': sub_l1}); curr_l1 = ""; sub_l1 = 0
 
+            # Header
             if l1_chg: print_items.append({'type': 'header_l1', 'label': f"■ {l1}"}); curr_l1 = l1
             if l2_chg: print_items.append({'type': 'header_l2', 'label': f"● {l2}"}); curr_l2 = l2
             if l3_chg: print_items.append({'type': 'header_l3', 'label': f"・ {l3}"}); curr_l3 = l3
@@ -278,7 +282,7 @@ def create_estimate_pdf(df, params):
         if curr_l2: print_items.append({'type': 'footer_l2', 'label': f"【{curr_l2} 計】", 'amt': sub_l2})
         if curr_l1: print_items.append({'type': 'footer_l1', 'label': f"■ {curr_l1} 合計", 'amt': sub_l1})
 
-        # 空行挿入処理 (小項目・部分項目の後のみ)
+        # 空行挿入
         final_items = []
         for i, item in enumerate(print_items):
             final_items.append(item)
@@ -286,61 +290,34 @@ def create_estimate_pdf(df, params):
                 curr = item['type']; next_t = print_items[i+1]['type']
                 if curr in ['footer_l3', 'footer_l4'] and next_t.startswith('header'):
                     final_items.append({'type': 'empty_row'})
+                if curr == 'footer_l2' and next_t.startswith('header'):
+                    final_items.append({'type': 'empty_row'})
+                if curr == 'footer_l1':
+                    final_items.append({'type': 'empty_row'})
 
-        # 描画ループ (底打ち計算付き)
+        # 描画ループ
         curr_idx = 0
         while curr_idx < len(final_items):
             draw_page_header_common(p_num); y = y_start
             rows_drawn = 0
-            
             while rows_drawn < rows_per_page:
                 if curr_idx < len(final_items):
                     item = final_items[curr_idx]
                     itype = item['type']
                     
-                    # --- ★重要：底打ち判定 ---
-                    # 「大項目計」または「中項目計」が来たら、ページ最下部へ飛ばすための空行数を計算
-                    # ただし、連続して「中計」→「大計」と来る場合は、中計は(底-1)、大計は(底)になるようにする
+                    # ★改ページ判定の修正
+                    is_header = itype in ['header_l1', 'header_l2']
+                    # 直前の項目を取得
+                    prev_item = final_items[curr_idx-1] if curr_idx > 0 else None
+                    # 「大項目(L1)」の直後に「中項目(L2)」が来た場合は、改ページ禁止（例外扱い）
+                    is_l2_after_l1 = (itype == 'header_l2' and prev_item and prev_item['type'] == 'header_l1')
                     
-                    if itype == 'footer_l2' or itype == 'footer_l1':
-                        # 連続するフッターを先読みして、このフッターが下から何番目になるべきか計算
-                        footers_in_sequence = 0
-                        temp_idx = curr_idx
-                        while temp_idx < len(final_items) and final_items[temp_idx]['type'] in ['footer_l2', 'footer_l1']:
-                            footers_in_sequence += 1
-                            temp_idx += 1
-                        
-                        # このフッターの順序 (シーケンス内の何番目か: 0スタート)
-                        # 例: [L2, L1] -> L2は0番目, L1は1番目
-                        # L2のターゲット行 = rows_per_page - footers_in_sequence
-                        # L1のターゲット行 = rows_per_page - (footers_in_sequence - 1) ... つまり最後
-                        
-                        # 現在のアイテムがシーケンス内の何番目か特定は少し複雑なので簡易ロジック：
-                        # "もし自分がL2計で、次がL1計なら、自分は(底-1)行目へ"
-                        # "もし自分が単独なら、(底)行目へ"
-                        
-                        target_row_from_bottom = 0 # 0 = 最下行
-                        if itype == 'footer_l2' and curr_idx + 1 < len(final_items) and final_items[curr_idx+1]['type'] == 'footer_l1':
-                            target_row_from_bottom = 1
-                        
-                        # 目標行番号 (0-indexed)
-                        target_row_idx = rows_per_page - 1 - target_row_from_bottom
-                        
-                        # 現在地が目標より上なら、空行で埋めて移動
-                        if rows_drawn < target_row_idx:
-                            # 埋める
-                            while rows_drawn < target_row_idx:
-                                draw_grid_line(y-row_height); y -= row_height
-                                rows_drawn += 1
-                    
-                    # 改ページ判定 (ヘッダー類)
-                    if rows_drawn > 0 and itype in ['header_l1', 'header_l2']:
-                        # ページ跨ぎ回避
+                    # ページの先頭(rows_drawn=0)以外で、ヘッダーが来て、かつ「L1->L2連続」でないなら改ページ
+                    if rows_drawn > 0 and is_header and not is_l2_after_l1:
                         rem = rows_per_page - rows_drawn
                         for _ in range(rem): draw_grid_line(y-row_height); y -= row_height
-                        break # 改ページ
+                        break
 
-                    # 描画
                     if itype == 'header_l1': draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, item['label'], 10, COLOR_L1)
                     elif itype == 'header_l2': draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, item['label'], 10, COLOR_L2)
                     elif itype == 'header_l3': draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, item['label'], 10, COLOR_L3)
@@ -376,7 +353,6 @@ def create_estimate_pdf(df, params):
 
                     draw_grid_line(y-row_height); y -= row_height; curr_idx += 1; rows_drawn += 1
                 else:
-                    # データ切れ：残りを空行で埋める
                     rem = rows_per_page - rows_drawn
                     for _ in range(rem): draw_grid_line(y-row_height); y -= row_height
                     break
