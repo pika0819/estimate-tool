@@ -282,7 +282,7 @@ def create_estimate_pdf(df, params):
         
         y = y_start
         
-        l1_summary = df.groupby('大項目', sort=False)['(自)金額'].apply(lambda x: x.apply(parse_amount).sum()).reset_index()
+        l1_summary = df.groupby('大項目', sort=False)['見積金額'].apply(lambda x: x.apply(parse_amount).sum()).reset_index()
         def sort_key(row):
             val = row['大項目']
             return list(SORT_ORDER.keys()).index(val) if val in SORT_ORDER else 999
@@ -679,5 +679,6 @@ else:
             st.session_state.pdf_data = None
             st.session_state.sheet_url = ""
             st.rerun()
+
 
 
