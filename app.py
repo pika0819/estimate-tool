@@ -663,33 +663,37 @@ if not st.session_state.pdf_ready:
 else:
         st.success("✅ PDF生成完了")
         
-        # 1. 上部にボタン類を配置
+        # 1. 操作ボタン（ダウンロード & リセット）
         col1, col2 = st.columns(2)
         with col1:
             st.download_button(
-                "📥 ダウンロード", 
+                "📥 PDFをダウンロード", 
                 st.session_state.pdf_data, 
                 file_name=st.session_state.filename, 
                 mime="application/pdf",
                 use_container_width=True
             )
         with col2:
-            if st.button("🔄 別のシートを作成する", use_container_width=True):
+            if st.button("🔄 別のシートを作成", use_container_width=True):
                 st.session_state.pdf_ready = False
                 st.session_state.pdf_data = None
                 st.rerun()
 
-        # 2. その下にPDFをそのまま表示（貼る形）
-        st.markdown("---") # 区切り線
-        st.markdown("### 👁️ プレビュー")
+        # 2. PDFファイルの埋め込み表示
+        st.markdown("---")
         
-        # PDFデータを埋め込む処理
+        # データがある場合のみ表示処理
         if st.session_state.pdf_data:
-            import base64
             try:
-                # データを文字列に変換して埋め込む
-                b64_pdf = base64.b64encode(st.session_state.pdf_data).decode('utf-8')
-                pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+                import base64
+                # バイナリデータをBase64エンコード
+                b64 = base64.b64encode(st.session_state.pdf_data).decode('utf-8')
+                
+                # ★修正ポイント: iframeではなくembedタグを使用
+                # type="application/pdf" を指定することで、ブラウザに「これはPDFファイルだよ」と明示して表示させます
+                pdf_display = f'<embed src="data:application/pdf;base64,{b64}" width="100%" height="900" type="application/pdf">'
+                
                 st.markdown(pdf_display, unsafe_allow_html=True)
             except Exception as e:
-                st.error(f"プレビュー表示に失敗しましたが、ダウンロードは可能です。")
+                # 万が一エラーが出た場合は、具体的な原因を表示する
+                st.error(f"プレビュー表示中にエラーが発生しました: {e}")
