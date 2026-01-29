@@ -660,25 +660,39 @@ if not st.session_state.pdf_ready:
                     st.session_state.pdf_ready = True
                     st.rerun()
 
-    else:
+else:
         st.success("✅ PDF生成が完了しました。")
         st.info(f"📄 ファイル名: {st.session_state.filename}")
         
-        col1, col2 = st.columns(2)
+        # データの安全な取得
+        pdf_bytes = st.session_state.get("pdf_data")
+        
+        col1, col2, col3 = st.columns(3)
+        
         with col1:
-            st.download_button(
-                "📥 PDFをダウンロード", 
-                st.session_state.pdf_data, 
-                file_name=st.session_state.filename, 
-                mime="application/pdf",
-                use_container_width=True
-            )
+            # 別タブで開くプレビューボタン（HTMLリンク）
+            if isinstance(pdf_bytes, bytes):
+                import base64
+                b64 = base64.b64encode(pdf_bytes).decode('utf-8')
+                pdf_display = f'<a href="data:application/pdf;base64,{b64}" target="_blank" style="text-decoration: none;"><button style="width: 100%; cursor: pointer; background-color: #f0f2f6; border: 1px solid #d1d5db; padding: 0.5rem; border-radius: 0.5rem; color: #31333f; font-weight: bold;">👁️ プレビュー (別タブ)</button></a>'
+                st.markdown(pdf_display, unsafe_allow_html=True)
+
         with col2:
-            if st.button("🔄 別のシートを作成する", use_container_width=True):
+            # 通常のダウンロードボタン
+            if isinstance(pdf_bytes, bytes):
+                st.download_button(
+                    label="📥 PDFを保存", 
+                    data=pdf_bytes, 
+                    file_name=st.session_state.filename, 
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+
+        with col3:
+            if st.button("🔄 別のシートを作成", use_container_width=True):
                 st.session_state.pdf_ready = False
                 st.session_state.pdf_data = None
                 st.session_state.sheet_url = ""
                 st.rerun()
-
 
 
