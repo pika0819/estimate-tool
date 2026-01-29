@@ -663,15 +663,20 @@ if not st.session_state.pdf_ready:
 else:
         st.success("✅ PDF生成完了")
 
-        # --- 1. メモリ上の「箱」から「中身」を確実に取り出す ---
-        # サイトに「ファイルを貼る」ためには、箱(BytesIO)ではなく、データそのもの(bytes)が必要です。
+        # 1. メモリ上の「箱」から「中身」を確実に取り出す
+        # サイトにファイルを「置く」ためには、BytesIO(箱)ではなく、bytes(生データ)が必要です。
         pdf_raw_data = st.session_state.pdf_data.getvalue()
 
-        # --- 2. サイトの「ダウンロードリンク」のように配置 ---
-        col1, col2 = st.columns(2)
-        with col1:
+        # 2. サイトにファイルを「貼って」いる状態を作る
+        # Excel配布サイトのように、中央に大きくダウンロードエリアを設けます。
+        st.info(f"📄 ファイル名: {st.session_state.filename}")
+
+        # 中央寄せにするために、あえて3列作って真ん中を使います
+        empty_l, center, empty_r = st.columns([1, 2, 1])
+        
+        with center:
             # これが「Excelを貼っているサイト」のボタンと同じ役割をします。
-            # クリックした瞬間に、メモリにある実体を「ファイル」としてブラウザに渡します。
+            # クリックした瞬間に、メモリにある実体が「ファイル」として保存されます。
             st.download_button(
                 label="📥 作成されたPDFを保存する", 
                 data=pdf_raw_data, 
@@ -679,25 +684,15 @@ else:
                 mime="application/pdf",
                 use_container_width=True
             )
-        with col2:
+            
+            # 「別のシートを作成」は少し控えめに配置
             if st.button("🔄 別のシートを作成する", use_container_width=True):
                 st.session_state.pdf_ready = False
                 st.session_state.pdf_data = None
                 st.rerun()
 
-        # --- 3. 「中身を覗き見（プレビュー）」させる ---
-        # 多くのサイトでは、クリックする前に中身が少し見えたりしますよね。それを再現します。
+        # プレビューが弾かれる環境のため、枠線などで「ここにファイルがあります」感だけ出します
         st.markdown("---")
-        st.write("📋 **生成されたファイルの内容確認**")
-
-        import base64
-        # 実体をテキスト(Base64)に変換して、ブラウザが「ファイル」として認識できるようにします。
-        b64_pdf = base64.b64encode(pdf_raw_data).decode('utf-8')
-        
-        # iframe(アイフレーム)という「窓」を作って、その中にPDFファイルを流し込みます。
-        # これが「サイトにPDFが埋め込まれている」状態です。
-        pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
-        
-        # Streamlitに「この窓を表示して」と命令します。
-        st.components.v1.html(pdf_display, height=800)
-
+        st.write("⚠️ お使いのブラウザ設定により、直接のプレビュー表示が制限されています。")
+        st.write("内容を確認するには、上のボタンからダウンロードしてファイルを開いてください。")
+    
