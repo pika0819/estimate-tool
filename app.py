@@ -662,13 +662,19 @@ if not st.session_state.pdf_ready:
 
 else:
         st.success("✅ PDF生成完了")
-        
-        # 1. 操作ボタン（ダウンロード & リセット）
+
+        # --- 1. メモリ上の「箱」から「中身」を取り出す処理 ---
+        # 画面表示(base64変換)にはBytesIO（箱）ではなくbytes（生データ）が必要です。
+        # getvalue()を使って、メモリ上の仮想ファイルからPDFの実体を取り出します。
+        pdf_raw_bytes = st.session_state.pdf_data.getvalue()
+
+        # --- 2. 操作ボタン（ダウンロード & リセット） ---
         col1, col2 = st.columns(2)
         with col1:
+            # ダウンロードボタンには、取り出した「pdf_raw_bytes」を渡します
             st.download_button(
-                "📥 PDFをダウンロード", 
-                st.session_state.pdf_data, 
+                label="📥 PDFをダウンロード", 
+                data=pdf_raw_bytes, 
                 file_name=st.session_state.filename, 
                 mime="application/pdf",
                 use_container_width=True
@@ -679,21 +685,21 @@ else:
                 st.session_state.pdf_data = None
                 st.rerun()
 
-        # 2. PDFファイルの埋め込み表示
+        # --- 3. PDFファイルを画面に表示（埋め込み） ---
         st.markdown("---")
         
-        # データがある場合のみ表示処理
-        if st.session_state.pdf_data:
-            try:
-                import base64
-                # バイナリデータをBase64エンコード
-                b64 = base64.b64encode(st.session_state.pdf_data).decode('utf-8')
-                
-                # ★修正ポイント: iframeではなくembedタグを使用
-                # type="application/pdf" を指定することで、ブラウザに「これはPDFファイルだよ」と明示して表示させます
-                pdf_display = f'<embed src="data:application/pdf;base64,{b64}" width="100%" height="900" type="application/pdf">'
-                
-                st.markdown(pdf_display, unsafe_allow_html=True)
-            except Exception as e:
-                # 万が一エラーが出た場合は、具体的な原因を表示する
-                st.error(f"プレビュー表示中にエラーが発生しました: {e}")
+        try:
+            import base64
+            # ブラウザが画面内でPDFを読み込めるように、生データをBase64形式に変換します
+            b64_pdf = base64.b64encode(pdf_raw_bytes).decode('utf-8')
+            
+            # embedタグを使い、ブラウザ標準のPDFビューアーを呼び出します
+            # これにより、メモリ内のデータが「PDFファイル」として画面に出現します
+            pdf_display = f'<embed src="data:application/pdf;base64,{b64_pdf}" width="100%" height="900" type="application/pdf">'
+            
+            # HTMLとして実行
+            st.markdown(pdf_display, unsafe_allow_html=True)
+            
+        except Exception as e:
+            # 何らかの理由で表示に失敗した場合の保険です
+            st.error(f"プレビュー表示中にエラーが発生しました。ダウンロードボタンを使用してください。")
