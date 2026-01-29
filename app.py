@@ -391,9 +391,9 @@ def create_estimate_pdf(df, params):
             if l1 not in data_tree: data_tree[l1] = {}
             if l2 not in data_tree[l1]: data_tree[l1][l2] = []
             item = row.copy()
-            item.update({'amt_val': parse_amount(row.get('(自)金額', 0)), 
+            item.update({'amt_val': parse_amount(row.get('見積金額', 0)), 
                          'qty_val': parse_amount(row.get('数量', 0)), 
-                         'price_val': parse_amount(row.get('(自)単価', 0)),
+                         'price_val': parse_amount(row.get('売単価', 0)),
                          'l3': l3, 'l4': l4})
             if item.get('名称'): data_tree[l1][l2].append(item)
 
@@ -679,3 +679,4 @@ else:
             st.session_state.pdf_data = None
             st.session_state.sheet_url = ""
             st.rerun()
+
