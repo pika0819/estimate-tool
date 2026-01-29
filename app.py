@@ -661,36 +661,32 @@ if not st.session_state.pdf_ready:
                     st.rerun()
 
 else:
-   st.success("✅ PDF生成が完了しました。")
-    st.info(f"📄 ファイル名: {st.session_state.filename}")
-    
-    col1, col2, col3 = st.columns(3) # 3列構成に変更
-
-    with col1:
-        # --- プレビュー用の設定 ---
-        # PDFデータをBase64エンコードして、ブラウザが直接開けるデータURL形式にします
+        st.success("✅ PDF生成が完了しました。")
+        st.info(f"📄 ファイル名: {st.session_state.filename}")
+        
         import base64
+        # PDFデータをブラウザで開くためのBase64変換
         base64_pdf = base64.b64encode(st.session_state.pdf_data).decode('utf-8')
-        pdf_display = f'<a href="data:application/pdf;base64,{base64_pdf}" target="_blank" style="text-decoration: none;"><button style="width: 100%; cursor: pointer; background-color: #f0f2f6; border: 1px solid #d1d5db; padding: 0.5rem; border-radius: 0.5rem; color: #31333f; font-weight: bold;">👁️ PDFをプレビュー</button></a>'
-        st.markdown(pdf_display, unsafe_allow_html=True)
+        pdf_display = f'<a href="data:application/pdf;base64,{base64_pdf}" target="_blank" style="text-decoration: none;"><button style="width: 100%; cursor: pointer; background-color: #f0f2f6; border: 1px solid #d1d5db; padding: 0.5rem; border-radius: 0.5rem; color: #31333f; font-weight: bold;">👁️ PDFをプレビュー (別タブ)</button></a>'
 
-    with col2:
-        st.download_button(
-            "📥 PDFを保存", 
-            st.session_state.pdf_data, 
-            file_name=st.session_state.filename, 
-            mime="application/pdf",
-            use_container_width=True
-        )
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # HTMLリンクによるプレビューボタンの表示
+            st.markdown(pdf_display, unsafe_allow_html=True)
 
-    with col3:
-        if st.button("🔄 別のシートを作成", use_container_width=True):
-            st.session_state.pdf_ready = False
-            st.session_state.pdf_data = None
-            st.session_state.sheet_url = ""
-            st.rerun()
+        with col2:
+            st.download_button(
+                "📥 PDFを保存", 
+                st.session_state.pdf_data, 
+                file_name=st.session_state.filename, 
+                mime="application/pdf",
+                use_container_width=True
+            )
 
-
-
-
-
+        with col3:
+            if st.button("🔄 別のシートを作成", use_container_width=True):
+                st.session_state.pdf_ready = False
+                st.session_state.pdf_data = None
+                st.session_state.sheet_url = ""
+                st.rerun()
