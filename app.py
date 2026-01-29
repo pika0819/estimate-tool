@@ -661,22 +661,23 @@ if not st.session_state.pdf_ready:
                     st.rerun()
 
         else:
-            st.success("✅ PDF生成が完了しました。")
-            st.info(f"📄 ファイル名: {st.session_state.filename}")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.download_button(
-                    "📥 PDFをダウンロード", 
-                    st.session_state.pdf_data, 
-                    file_name=st.session_state.filename, 
-                    mime="application/pdf",
-                    use_container_width=True
-                )
-            with col2:
-                if st.button("🔄 別のシートを作成する", use_container_width=True):
-                    st.session_state.pdf_ready = False
-                    st.session_state.pdf_data = None
-                    st.session_state.sheet_url = ""
-                    st.rerun()
+            st.success("✅ PDF生成が完了しました。")
+            st.info(f"📄 ファイル名: {st.session_state.filename}")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.download_button(
+                    "📥 PDFをダウンロード", 
+                    st.session_state.pdf_data, 
+                    file_name=st.session_state.filename, 
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+            with col2:
+                if st.button("🔄 別のシートを作成する", use_container_width=True):
+                    st.session_state.pdf_ready = False
+                    st.session_state.pdf_data = None
+                    st.session_state.sheet_url = ""
+                    st.rerun()
+
 
