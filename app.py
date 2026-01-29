@@ -690,9 +690,3 @@ else:
                 st.session_state.pdf_ready = False
                 st.session_state.pdf_data = None
                 st.rerun()
-
-        # プレビューが弾かれる環境のため、枠線などで「ここにファイルがあります」感だけ出します
-        st.markdown("---")
-        st.write("⚠️ お使いのブラウザ設定により、直接のプレビュー表示が制限されています。")
-        st.write("内容を確認するには、上のボタンからダウンロードしてファイルを開いてください。")
-    
