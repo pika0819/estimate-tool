@@ -661,9 +661,35 @@ if not st.session_state.pdf_ready:
                     st.rerun()
 
 else:
-    st.success("✅ PDF生成完了")
-    col1, col2 = st.columns(2)
-    with col1: st.download_button("📥 ダウンロード", st.session_state.pdf_data, file_name=st.session_state.filename, mime="application/pdf")
-    with col2:
-        if st.button("別のシートを作成する"):
-            st.session_state.pdf_ready = False; st.rerun()
+        st.success("✅ PDF生成完了")
+        
+        # 1. 上部にボタン類を配置
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
+                "📥 ダウンロード", 
+                st.session_state.pdf_data, 
+                file_name=st.session_state.filename, 
+                mime="application/pdf",
+                use_container_width=True
+            )
+        with col2:
+            if st.button("🔄 別のシートを作成する", use_container_width=True):
+                st.session_state.pdf_ready = False
+                st.session_state.pdf_data = None
+                st.rerun()
+
+        # 2. その下にPDFをそのまま表示（貼る形）
+        st.markdown("---") # 区切り線
+        st.markdown("### 👁️ プレビュー")
+        
+        # PDFデータを埋め込む処理
+        if st.session_state.pdf_data:
+            import base64
+            try:
+                # データを文字列に変換して埋め込む
+                b64_pdf = base64.b64encode(st.session_state.pdf_data).decode('utf-8')
+                pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+                st.markdown(pdf_display, unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"プレビュー表示に失敗しましたが、ダウンロードは可能です。")
