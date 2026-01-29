@@ -144,17 +144,12 @@ def create_estimate_pdf(df, params):
     for k in col_widths.keys(): col_x[k] = curr_x; curr_x += col_widths[k]
     right_edge = curr_x
     
-    # ★行数を18行に設定（より大きなフォントで見やすく）
-    header_height = 9 * mm
-    top_margin = 35 * mm
-    bottom_margin = 15 * mm  # 下部マージン
-    
-    # 利用可能な高さから18行分の行高さを逆算
-    available_height = height - top_margin - bottom_margin
-    rows_per_page = 18  # 21→18に変更
-    row_height = available_height / rows_per_page  # 約9.8mm
+    header_height = 9 * mm; row_height = 7 * mm
+    top_margin = 35 * mm; 
+    bottom_margin = 21 * mm 
     
     y_start = height - top_margin
+    rows_per_page = int((height - top_margin - bottom_margin) / row_height)
 
     def draw_grid_line(y_pos, color=colors.black, width=0.5):
         c.setLineWidth(width); c.setStrokeColor(color); c.line(x_base, y_pos, right_edge, y_pos)
@@ -282,10 +277,8 @@ def create_estimate_pdf(df, params):
     def draw_page3_total_summary(p_num):
         draw_page_header_common(p_num, "見 積 総 括 表")
         
-        # ★集計行（小計・消費税・総合計）の3行を含めたグリッドを描画
-        footer_rows = 3
-        grid_bottom = bottom_margin + (footer_rows * row_height)
-        draw_full_grid(y_start, grid_bottom)
+        # ★先にグリッド全体を描画
+        draw_full_grid(y_start, bottom_margin)
         
         y = y_start
         
@@ -299,20 +292,21 @@ def create_estimate_pdf(df, params):
         for idx, row in l1_summary.iterrows():
             l1_name = row['大項目']; amount = row['(自)金額']
             if not l1_name: continue
-            draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"■ {l1_name}", 12, COLOR_L1)  # 11→12
-            c.setFont(FONT_NAME, 12); c.setFillColor(COLOR_L1)  # 11→12
+            draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"■ {l1_name}", 10, COLOR_L1)
+            c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L1) 
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(amount):,}")
             y -= row_height
         
         # フッター部分（小計・消費税・総合計）
-        footer_start_y = grid_bottom  # グリッドの下端から開始
+        footer_rows = 3
+        footer_start_y = bottom_margin + (footer_rows * row_height)
         y = footer_start_y
         
         labels = [("小計", total_grand), ("消費税", tax_amount), ("総合計", final_total)]
         for lbl, val in labels:
             c.setFillColor(colors.black)
-            draw_bold_string(col_x['name'] + 20*mm, y-5*mm, f"【 {lbl} 】", 13, COLOR_TOTAL)  # 12→13
-            c.setFont(FONT_NAME, 13); c.setFillColor(COLOR_TOTAL)  # 12→13
+            draw_bold_string(col_x['name'] + 20*mm, y-5*mm, f"【 {lbl} 】", 11, COLOR_TOTAL)
+            c.setFont(FONT_NAME, 11); c.setFillColor(COLOR_TOTAL)
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(val):,}")
             y -= row_height
             
@@ -367,18 +361,18 @@ def create_estimate_pdf(df, params):
 
             if spacer: y -= row_height
             
-            draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"■ {l1_name}", 12, COLOR_L1)  # 11→12
+            draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"■ {l1_name}", 10, COLOR_L1)
             y -= row_height
             
             for l2_name in sorted_l2_keys:
                 l2_amt = l2_items[l2_name]
-                draw_bold_string(col_x['name'] + INDENT_L2, y-5*mm, f"● {l2_name}", 11, COLOR_L2)  # 10→11
-                c.setFont(FONT_NAME, 11); c.setFillColor(COLOR_L2)  # 10→11
+                draw_bold_string(col_x['name'] + INDENT_L2, y-5*mm, f"● {l2_name}", 10, COLOR_L2)
+                c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L2)
                 c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(l2_amt):,}")
                 y -= row_height
             
-            draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"【{l1_name} 計】", 12, COLOR_L1)  # 11→12
-            c.setFont(FONT_NAME, 12); c.setFillColor(COLOR_L1)  # 11→12
+            draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"【{l1_name} 計】", 10, COLOR_L1)
+            c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L1)
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(l1_total):,}")
             y -= row_height
             is_first_block = False
@@ -407,7 +401,7 @@ def create_estimate_pdf(df, params):
 
         draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
         
-        # ★ページ全体にグリッドを描画（bottom_marginまで）
+        # ★先にグリッド全体を描画
         draw_full_grid(y_start, bottom_margin)
         
         y = y_start
@@ -440,7 +434,7 @@ def create_estimate_pdf(df, params):
                 draw_full_grid(y_start, bottom_margin)
                 y = y_start
             
-            draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1}", 12, COLOR_L1)  # 11→12
+            draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1}", 10, COLOR_L1)
             y -= row_height
             is_first_l1 = False
             
@@ -503,23 +497,23 @@ def create_estimate_pdf(df, params):
                         c.showPage()
                         p_num += 1
                         draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
-                        # ★ページ全体にグリッドを描画（bottom_marginまで）
+                        # ★新ページでもグリッド全体を描画
                         draw_full_grid(y_start, bottom_margin)
                         y = y_start
                         
-                        draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1} (続き)", 12, COLOR_L1)  # 11→12
+                        draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1} (続き)", 10, COLOR_L1)
                         y -= row_height
                         
                         if l2_has_started and itype != 'footer_l1':
-                            draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, f"● {l2} (続き)", 11, COLOR_L2)  # 10→11
+                            draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, f"● {l2} (続き)", 10, COLOR_L2)
                             y -= row_height
 
                         if active_l3_label:
-                            draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, f"{active_l3_label} (続き)", 11, COLOR_L3)  # 10→11
+                            draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, f"{active_l3_label} (続き)", 10, COLOR_L3)
                             y -= row_height
                         
                         if active_l4_label:
-                            draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, f"{active_l4_label} (続き)", 10, colors.black)  # 9→10
+                            draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, f"{active_l4_label} (続き)", 9, colors.black)
                             y -= row_height
 
                     # 底打ちロジック (footerのみ)
@@ -533,37 +527,37 @@ def create_estimate_pdf(df, params):
 
                     # --- 描画処理 ---
                     if itype == 'header_l2':
-                        draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, b['label'], 11, COLOR_L2)  # 10→11
+                        draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, b['label'], 10, COLOR_L2)
                     elif itype == 'header_l3':
-                        draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, b['label'], 11, COLOR_L3)  # 10→11
+                        draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, b['label'], 10, COLOR_L3)
                     elif itype == 'header_l4':
-                        draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, b['label'], 10, colors.black)  # 9→10
+                        draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, b['label'], 9, colors.black)
                     elif itype == 'item':
-                        d = b['data']; c.setFont(FONT_NAME, 10); c.setFillColor(colors.black)  # 9→10
+                        d = b['data']; c.setFont(FONT_NAME, 9); c.setFillColor(colors.black)
                         c.drawString(col_x['name']+INDENT_ITEM, y-5*mm, d.get('名称',''))
-                        c.setFont(FONT_NAME, 9); c.drawString(col_x['spec']+1*mm, y-5*mm, d.get('規格',''))  # 8→9
-                        c.setFont(FONT_NAME, 10)  # 9→10
+                        c.setFont(FONT_NAME, 8); c.drawString(col_x['spec']+1*mm, y-5*mm, d.get('規格',''))
+                        c.setFont(FONT_NAME, 9)
                         if d['qty_val']: c.drawRightString(col_x['qty']+col_widths['qty']-2*mm, y-5*mm, f"{d['qty_val']:,.2f}")
                         c.drawCentredString(col_x['unit']+col_widths['unit']/2, y-5*mm, d.get('単位',''))
                         if d['price_val']: c.drawRightString(col_x['price']+col_widths['price']-2*mm, y-5*mm, f"{int(d['price_val']):,}")
                         if d['amt_val']: c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(d['amt_val']):,}")
-                        c.setFont(FONT_NAME, 9); c.drawString(col_x['rem']+1*mm, y-5*mm, d.get('備考',''))  # 8→9
+                        c.setFont(FONT_NAME, 8); c.drawString(col_x['rem']+1*mm, y-5*mm, d.get('備考',''))
                     elif itype == 'footer_l4':
-                        draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, b['label'], 10, colors.black)  # 9→10
-                        c.setFont(FONT_NAME, 10); c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")  # 9→10
+                        draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, b['label'], 9, colors.black)
+                        c.setFont(FONT_NAME, 9); c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")
                     
                     elif itype == 'footer_l3':
-                        draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, b['label'], 10, COLOR_L3)  # 9→10
-                        c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L3)  # 9→10
+                        draw_bold_string(col_x['name']+INDENT_L3, y-5*mm, b['label'], 9, COLOR_L3)
+                        c.setFont(FONT_NAME, 9); c.setFillColor(COLOR_L3) 
                         c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")
                     elif itype == 'footer_l2':
-                        draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, b['label'], 11, COLOR_L2)  # 10→11
-                        c.setFont(FONT_NAME, 11); c.setFillColor(COLOR_L2)  # 10→11
+                        draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, b['label'], 10, COLOR_L2)
+                        c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L2)
                         c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")
                         c.setLineWidth(1); c.setStrokeColor(COLOR_L2); c.line(x_base, y, right_edge, y)
                     elif itype == 'footer_l1':
-                        draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, b['label'], 12, COLOR_L1)  # 11→12
-                        c.setFont(FONT_NAME, 12); c.setFillColor(COLOR_L1)  # 11→12
+                        draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, b['label'], 10, COLOR_L1)
+                        c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L1)
                         c.drawRightString(col_x['amt']+col_widths['amt']-2*mm, y-5*mm, f"{int(b['amt']):,}")
                         c.setLineWidth(1); c.setStrokeColor(COLOR_L1); c.line(x_base, y, right_edge, y)
                     elif itype == 'empty_row': pass
