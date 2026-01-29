@@ -131,7 +131,7 @@ def create_estimate_pdf(df, params):
         tw = c.stringWidth(text, FONT_NAME, size)
         draw_bold_string(x - tw/2, y, text, size, color)
 
-    total_grand = df['(自)金額'].apply(parse_amount).sum()
+    total_grand = df['見積金額'].apply(parse_amount).sum()
     tax_amount = total_grand * 0.1
     final_total = total_grand + tax_amount
 
@@ -290,7 +290,7 @@ def create_estimate_pdf(df, params):
         l1_summary = l1_summary.sort_values('sort_idx').drop('sort_idx', axis=1)
 
         for idx, row in l1_summary.iterrows():
-            l1_name = row['大項目']; amount = row['(自)金額']
+            l1_name = row['大項目']; amount = row['見積金額']
             if not l1_name: continue
             draw_bold_string(col_x['name'] + INDENT_L1, y-5*mm, f"■ {l1_name}", 10, COLOR_L1)
             c.setFont(FONT_NAME, 10); c.setFillColor(COLOR_L1) 
@@ -319,7 +319,7 @@ def create_estimate_pdf(df, params):
         breakdown_data = {} 
         for row in raw_rows:
             l1 = str(row.get('大項目', '')).strip(); l2 = str(row.get('中項目', '')).strip()
-            amt = parse_amount(row.get('(自)金額', 0))
+            amt = parse_amount(row.get('見積金額', 0))
             if not l1: continue
             if l1 not in breakdown_data: breakdown_data[l1] = {'items': {}, 'total': 0}
             if l2:
@@ -679,4 +679,5 @@ else:
             st.session_state.pdf_data = None
             st.session_state.sheet_url = ""
             st.rerun()
+
 
