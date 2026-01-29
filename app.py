@@ -205,13 +205,13 @@ def create_estimate_pdf(df, params):
 
     # 1. 表紙
     def draw_page1():
-        draw_bold_centered_string(width/2, height - 60*mm, "御   見   積   書", 50, COLOR_ACCENT_BLUE)
+        draw_bold_centered_string(width/2, height - 60*mm, "御   見   積   書", 45, COLOR_ACCENT_BLUE)
         lw = 140*mm; lx = (width - lw)/2; ly = height - 65*mm
         c.setStrokeColor(COLOR_ACCENT_BLUE); c.setLineWidth(2); c.line(lx, ly, lx+lw, ly)
         c.setLineWidth(0.5); c.line(lx, ly-2*mm, lx+lw, ly-2*mm)
         c.setFillColor(colors.black); c.setStrokeColor(colors.black)
 
-        draw_bold_centered_string(width/2, height - 110*mm, f"{params['client_name']}  様", 36)
+        draw_bold_centered_string(width/2, height - 110*mm, f"{params['client_name']}    様", 32)
         c.setLineWidth(1); c.line(width/2 - 80*mm, height - 112*mm, width/2 + 80*mm, height - 112*mm)
         draw_bold_centered_string(width/2, height - 140*mm, f"{params['project_name']}", 24)
         c.setLineWidth(0.5); c.line(width/2 - 80*mm, height - 142*mm, width/2 + 80*mm, height - 142*mm)
@@ -278,7 +278,7 @@ def create_estimate_pdf(df, params):
         draw_page_header_common(p_num, "見 積 総 括 表")
         
         # ★先にグリッド全体を描画
-        draw_full_grid(y_start, bottom_margin)
+        draw_full_grid(y_start, bottom_margin - row_height)
         
         y = y_start
         
@@ -332,7 +332,7 @@ def create_estimate_pdf(df, params):
         draw_page_header_common(p_num, "内 訳 明 細 書 (集計)")
         
         # ★先にグリッド全体を描画
-        draw_full_grid(y_start, bottom_margin)
+        draw_full_grid(y_start, bottom_margin - row_height)
         
         y = y_start
         is_first_block = True
@@ -354,7 +354,7 @@ def create_estimate_pdf(df, params):
                 p_num += 1
                 draw_page_header_common(p_num, "内 訳 明 細 書 (集計)")
                 # ★新ページでもグリッド全体を描画
-                draw_full_grid(y_start, bottom_margin)
+                draw_full_grid(y_start, bottom_margin - row_height)
                 y = y_start
                 is_first_block = True
                 spacer = 0
@@ -402,7 +402,7 @@ def create_estimate_pdf(df, params):
         draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
         
         # ★先にグリッド全体を描画
-        draw_full_grid(y_start, bottom_margin)
+        draw_full_grid(y_start, bottom_margin - row_height)
         
         y = y_start
         is_first_l1 = True
@@ -420,7 +420,7 @@ def create_estimate_pdf(df, params):
                     p_num += 1
                     draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
                     # ★新ページでもグリッド全体を描画
-                    draw_full_grid(y_start, bottom_margin)
+                    draw_full_grid(y_start, bottom_margin - row_height)
                     y = y_start
                 else:
                     y -= row_height
@@ -431,7 +431,7 @@ def create_estimate_pdf(df, params):
                 p_num += 1
                 draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
                 # ★新ページでもグリッド全体を描画
-                draw_full_grid(y_start, bottom_margin)
+                draw_full_grid(y_start, bottom_margin - row_height)
                 y = y_start
             
             draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1}", 10, COLOR_L1)
@@ -498,7 +498,7 @@ def create_estimate_pdf(df, params):
                         p_num += 1
                         draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
                         # ★新ページでもグリッド全体を描画
-                        draw_full_grid(y_start, bottom_margin)
+                        draw_full_grid(y_start, bottom_margin - row_height)
                         y = y_start
                         
                         draw_bold_string(col_x['name']+INDENT_L1, y-5*mm, f"■ {l1} (続き)", 10, COLOR_L1)
@@ -603,7 +603,7 @@ if 'sheet_url' not in st.session_state:
 
 if not st.session_state.pdf_ready:
     with st.sidebar:
-        st.header("🔑 データ入力")
+        st.header("🔑 見積りシートURL入力")
         
         # ★改善: URL入力後は非表示にする
         if not st.session_state.sheet_url:
@@ -679,6 +679,7 @@ else:
             st.session_state.pdf_data = None
             st.session_state.sheet_url = ""
             st.rerun()
+
 
 
 
