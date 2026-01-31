@@ -176,35 +176,40 @@ def create_estimate_pdf(df, params):
 
     # 1. 表紙
     def draw_page1():
-# 1. 線の位置と幅の設定
-        lw = 180*mm
+# --- 1. タイトル部分（よりワイドに、文字もゆったり） ---
+        title_text = "御見積書"
+        lw = 180*mm # 線の幅を140から180に広げる
         lx = (width - lw)/2
-        # 文字の「底」より少し下（2mm程度）を線の中心にする
-        ly = height - 56*mm 
+        ly = height - 57*mm 
         
-        # 2. 蛍光ペン部分（太い線）の描画
         c.saveState()
-        # 透明度を下げて「蛍光ペン感」を出す（0.3 = 30%の濃さ）
+        # 蛍光ペン（太線）：少し太く、もっと薄くして上品に
         c.setFillAlpha(0.2) 
-        c.setStrokeColor(colors.HexColor('#c2c9de')) # 薄い青
-        c.setLineWidth(13) # 蛍光ペンの太さ（少し細くしてシャープに）
+        c.setStrokeColor(colors.HexColor('#c2c9de'))
+        c.setLineWidth(14) 
         c.line(lx, ly, lx+lw, ly)
+        
+        # タイトル文字：文字の間隔を広げる(charSpace)
+        c.setFont(FONT_NAME, 45)
+        c.setFillColor(COLOR_ACCENT_BLUE)
+        c.setCharSpace(10) # 文字と文字の間を10pt空ける（これでワイドになります）
+        # drawCentredStringで文字間隔を反映させる
+        c.drawCentredString(width/2, height - 55*mm, title_text)
         c.restoreState()
 
-        # 3. 装飾用の細い線（アンダーライン）
-        # 蛍光ペンのすぐ下に細い線を引いて引き締める
-        c.setLineWidth(0.5)
-        c.setStrokeColor(colors.HexColor('#26408C')) # 濃い青
-        c.line(lx, ly - 3*mm, lx+lw, ly - 3*mm)
+# --- 2. 宛名・工事名部分（下線を黒く、短く） ---
+        # 宛名
+        draw_bold_centered_string(width/2, height - 110*mm, f"{params['client_name']}    様", 32)
+        # 幅を 80*mm から 60*mm に短縮し、色を黒に固定
+        c.setStrokeColor(colors.black)
+        c.setLineWidth(1)
+        c.line(width/2 - 60*mm, height - 112*mm, width/2 + 60*mm, height - 112*mm)
 
-        # 4. 文字の描画
-        # 文字の座標は 55*mm のまま。線が 57*mm なので、文字の足元に線が来ます。
-        draw_bold_centered_string(width/2, height - 55*mm, "御 　  見　   積 　  書", 50, COLOR_ACCENT_BLUE)
-
-        draw_bold_centered_string(width/2, height - 110*mm, f"{params['client_name']}   様", 32)
-        c.setLineWidth(1); c.line(width/2 - 80*mm, height - 112*mm, width/2 + 80*mm, height - 112*mm)
+        # 工事名
         draw_bold_centered_string(width/2, height - 140*mm, f"{params['project_name']}", 24)
-        c.setLineWidth(0.5); c.line(width/2 - 80*mm, height - 142*mm, width/2 + 80*mm, height - 142*mm)
+        # 幅をさらに短く（50*mm）し、細い黒線に
+        c.setLineWidth(0.5)
+        c.line(width/2 - 50*mm, height - 142*mm, width/2 + 50*mm, height - 142*mm)
         
         wareki = to_wareki(params['date'])
         c.setFont(FONT_NAME, 14); c.drawString(40*mm, 50*mm, wareki)
@@ -680,6 +685,7 @@ else:
                 st.session_state.pdf_ready = False
                 st.session_state.pdf_data = None
                 st.rerun()
+
 
 
 
