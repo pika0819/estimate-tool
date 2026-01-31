@@ -15,13 +15,12 @@ from datetime import datetime
 # ---------------------------------------------------------
 # ■ 設定エリア
 # ---------------------------------------------------------
-SHEET_NAME = "T_見積入力" 
+SHEET_NAME = "T_見積入力"
 INFO_SHEET_NAME = "現場情報"
-FONT_FILE = "NotoSerifJP-Regular.ttf" 
+FONT_FILE = "NotoSerifJP-Regular.ttf"
 FONT_NAME = "NotoSerifJP"
 
-# 修正後の配色設定（HexColorを使用）
-# これならCanvaの色コードをそのままコピペできます
+# 配色設定（HexColorを使用）
 COLOR_L1 = colors.HexColor('#0D5940')        # 深緑
 COLOR_L2 = colors.HexColor('#1A2673')        # 濃紺
 COLOR_L3 = colors.HexColor('#994D1A')        # テラコッタ
@@ -174,7 +173,7 @@ def create_estimate_pdf(df, params):
         c.setStrokeColor(colors.black); c.setLineWidth(0.5); c.rect(x_base, hy_grid, right_edge - x_base, header_height, stroke=1, fill=0)
         draw_vertical_lines(hy_grid + header_height, hy_grid)
 
-# 1. 表紙
+    # 1. 表紙
     def draw_page1():
         # --- タイトル部分 ---
         title_text = "御   見   積   書"
@@ -212,7 +211,7 @@ def create_estimate_pdf(df, params):
         # 宛名
         draw_bold_centered_string(width/2, height - 110*mm, f"{params['client_name']}    様", 32)
         c.setLineWidth(1)
-        # 線の長さを短く調整 (width/2 から 60mm ずつ左右に)
+        # 線の長さを短く調整
         c.line(width/2 - 60*mm, height - 112*mm, width/2 + 60*mm, height - 112*mm)
 
         # 工事名
@@ -288,7 +287,7 @@ def create_estimate_pdf(df, params):
         draw_full_grid(y_start, bottom_margin - row_height)
         y = y_start
         
-        # ★修正: SORT_ORDERを使わず、groupbyのsort=Falseで出現順を維持
+        # SORT_ORDERを使わず、groupbyのsort=Falseで出現順を維持
         l1_summary = df.groupby('大項目', sort=False)['見積金額'].apply(lambda x: x.apply(parse_amount).sum()).reset_index()
 
         for idx, row in l1_summary.iterrows():
@@ -341,7 +340,6 @@ def create_estimate_pdf(df, params):
                 breakdown_data[l1]['items'][l2] += amt
             breakdown_data[l1]['total'] += amt
 
-        # ★修正: SORT_ORDERではなく出現順リスト(seen_l1)を使用
         draw_page_header_common(p_num, "内 訳 明 細 書 (集計)")
         draw_full_grid(y_start, bottom_margin - row_height)
         y = y_start
@@ -352,7 +350,6 @@ def create_estimate_pdf(df, params):
             l2_items = data['items']
             l1_total = data['total']
             
-            # ★修正: L2も出現順リストを使用
             sorted_l2_keys = seen_l2_by_l1[l1_name]
 
             spacer = 1 if not is_first_block else 0
@@ -419,7 +416,6 @@ def create_estimate_pdf(df, params):
                          'l3': l3, 'l4': l4})
             if item.get('名称'): data_tree[l1][l2].append(item)
 
-        # ★修正: SORT_ORDERの代わりに出現順(seen_l1)を使う
         draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
         draw_full_grid(y_start, bottom_margin - row_height)
         y = y_start
@@ -429,7 +425,7 @@ def create_estimate_pdf(df, params):
             l2_dict = data_tree[l1]
             l1_total = sum([sum([i['amt_val'] for i in items]) for items in l2_dict.values()])
             
-            # ★修正: L2も出現順
+            # L2も出現順
             sorted_l2 = seen_l2_by_l1[l1]
 
             if not is_first_l1:
@@ -595,7 +591,7 @@ def create_estimate_pdf(df, params):
     return buffer
 
 # ---------------------------------------------------------
-# 3. UI（★URL入力方法を改善）
+# 3. UI（URL入力方法を改善）
 # ---------------------------------------------------------
 st.set_page_config(layout="wide")
 st.title("📄 自動見積書作成システム")
@@ -614,7 +610,7 @@ if not st.session_state.pdf_ready:
     with st.sidebar:
         st.header("🔑 見積りシートURL入力")
         
-        # ★改善: URL入力後は非表示にする
+        # URL入力後は非表示にする
         if not st.session_state.sheet_url:
             # URL未入力時のみ表示
             input_url = st.text_input(
@@ -673,19 +669,15 @@ else:
         st.success("✅ PDF生成完了")
 
         # 1. メモリ上の「箱」から「中身」を確実に取り出す
-        # サイトにファイルを「置く」ためには、BytesIO(箱)ではなく、bytes(生データ)が必要です。
         pdf_raw_data = st.session_state.pdf_data.getvalue()
 
         # 2. サイトにファイルを「貼って」いる状態を作る
-        # Excel配布サイトのように、中央に大きくダウンロードエリアを設けます。
         st.info(f"📄 ファイル名: {st.session_state.filename}")
 
         # 中央寄せにするために、あえて3列作って真ん中を使います
         empty_l, center, empty_r = st.columns([1, 2, 1])
         
         with center:
-            # これが「Excelを貼っているサイト」のボタンと同じ役割をします。
-            # クリックした瞬間に、メモリにある実体が「ファイル」として保存されます。
             st.download_button(
                 label="📥 作成されたPDFを保存する", 
                 data=pdf_raw_data, 
@@ -699,13 +691,3 @@ else:
                 st.session_state.pdf_ready = False
                 st.session_state.pdf_data = None
                 st.rerun()
-
-
-
-
-
-
-
-
-
-
