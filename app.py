@@ -20,13 +20,14 @@ INFO_SHEET_NAME = "現場情報"
 FONT_FILE = "NotoSerifJP-Regular.ttf" 
 FONT_NAME = "NotoSerifJP"
 
-# 配色
-COLOR_L1 = colors.Color(0.05, 0.35, 0.25) # 深緑
-COLOR_L2 = colors.Color(0.1, 0.15, 0.45)  # 濃紺
-COLOR_L3 = colors.Color(0.6, 0.3, 0.1)    # テラコッタ
-COLOR_TEXT = colors.black
-COLOR_TOTAL = colors.Color(0.7, 0.1, 0.15) # 深紅
-COLOR_ACCENT_BLUE = colors.Color(0.15, 0.25, 0.55)
+# 修正後の配色設定（HexColorを使用）
+# これならCanvaの色コードをそのままコピペできます
+COLOR_L1 = colors.HexColor('#0D5940')        # 深緑
+COLOR_L2 = colors.HexColor('#1A2673')        # 濃紺
+COLOR_L3 = colors.HexColor('#994D1A')        # テラコッタ
+COLOR_TEXT = colors.HexColor('#000000')      # 黒
+COLOR_TOTAL = colors.HexColor('#B31A26')     # 深紅
+COLOR_ACCENT_BLUE = colors.HexColor('#26408C') # アクセント青
 
 # インデント
 INDENT_L1 = 1.0 * mm
@@ -175,9 +176,9 @@ def create_estimate_pdf(df, params):
 
     # 1. 表紙
     def draw_page1():
-        draw_bold_centered_string(width/2, height - 60*mm, "御   見   積   書", 45, COLOR_ACCENT_BLUE)
-        lw = 140*mm; lx = (width - lw)/2; ly = height - 65*mm
-        c.setStrokeColor(COLOR_ACCENT_BLUE); c.setLineWidth(2); c.line(lx, ly, lx+lw, ly)
+        draw_bold_centered_string(width/2, height - 55*mm, "御   見   積   書", 45, COLOR_ACCENT_BLUE)
+        lw = 140*mm; lx = (width - lw)/2; ly = height - 50*mm
+        c.setStrokeColor(colors.HexColor('#c2c9de')); c.setLineWidth(5); c.line(lx, ly, lx+lw, ly)
         c.setLineWidth(0.5); c.line(lx, ly-2*mm, lx+lw, ly-2*mm)
         c.setFillColor(colors.black); c.setStrokeColor(colors.black)
 
@@ -660,6 +661,7 @@ else:
                 st.session_state.pdf_ready = False
                 st.session_state.pdf_data = None
                 st.rerun()
+
 
 
 
