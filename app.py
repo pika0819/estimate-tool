@@ -67,7 +67,7 @@ def get_all_data_from_url(sheet_url):
         return None, None
 
 # ---------------------------------------------------------
-# 2. PDF生成エンジン（縦線表示を改善）
+# 2. PDF生成エンジン（スプレッドシート順序対応版）
 # ---------------------------------------------------------
 def create_estimate_pdf(df, params):
     buffer = io.BytesIO()
@@ -85,9 +85,7 @@ def create_estimate_pdf(df, params):
         except: return 0.0
 
     def to_wareki(date_str):
-        # 現場情報シートから来る文字列を日付として解釈
         try:
-            # 既に令和等の文字列ならそのまま、日付形式なら変換
             if '年' in date_str: return date_str
             dt_obj = pd.to_datetime(date_str)
             y = dt_obj.year; m = dt_obj.month; d = dt_obj.day
@@ -133,36 +131,26 @@ def create_estimate_pdf(df, params):
     y_start = height - top_margin
     rows_per_page = int((height - top_margin - bottom_margin) / row_height)
 
-    def draw_grid_line(y_pos, color=colors.black, width=0.5):
-        c.setLineWidth(width); c.setStrokeColor(color); c.line(x_base, y_pos, right_edge, y_pos)
-    
-    # ★修正: グリッド全体を描画する関数（縦線・横線）
     def draw_full_grid(y_top, y_bottom):
         """指定範囲に完全なグリッド（縦線・横線）を描画"""
         c.saveState()
-        
-        # 縦線を描画
         c.setLineWidth(0.5)
         c.setStrokeColor(colors.grey)
         for k in col_x:
             c.line(col_x[k], y_top, col_x[k], y_bottom)
         c.line(right_edge, y_top, right_edge, y_bottom)
         
-        # 横線を描画（行単位） - 最下部の線も含める
         current_y = y_top
-        while current_y > y_bottom - 0.1:  # 微小な誤差を考慮
+        while current_y > y_bottom - 0.1: 
             c.setStrokeColor(colors.black)
             c.line(x_base, current_y, right_edge, current_y)
             current_y -= row_height
         
-        # ★最下部の横線を確実に描画
         c.setStrokeColor(colors.black)
         c.line(x_base, y_bottom, right_edge, y_bottom)
-        
         c.restoreState()
     
     def draw_vertical_lines(y_top, y_btm):
-        """縦線のみ描画（互換性のため残す）"""
         c.setLineWidth(0.5); c.setStrokeColor(colors.grey)
         for k in col_x: c.line(col_x[k], y_top, col_x[k], y_btm)
         c.line(right_edge, y_top, right_edge, y_btm)
@@ -193,7 +181,7 @@ def create_estimate_pdf(df, params):
         c.setLineWidth(0.5); c.line(lx, ly-2*mm, lx+lw, ly-2*mm)
         c.setFillColor(colors.black); c.setStrokeColor(colors.black)
 
-        draw_bold_centered_string(width/2, height - 110*mm, f"{params['client_name']}    様", 32)
+        draw_bold_centered_string(width/2, height - 110*mm, f"{params['client_name']}   様", 32)
         c.setLineWidth(1); c.line(width/2 - 80*mm, height - 112*mm, width/2 + 80*mm, height - 112*mm)
         draw_bold_centered_string(width/2, height - 140*mm, f"{params['project_name']}", 24)
         c.setLineWidth(0.5); c.line(width/2 - 80*mm, height - 142*mm, width/2 + 80*mm, height - 142*mm)
@@ -255,21 +243,14 @@ def create_estimate_pdf(df, params):
         c.setFont(FONT_NAME, 12); c.drawString(width - 80*mm, box_top + 5*mm, wareki)
         c.showPage()
 
-    # 3. 総括表（★グリッド描画を改善）
+    # 3. 総括表（スプレッドシート順）
     def draw_page3_total_summary(p_num):
         draw_page_header_common(p_num, "見 積 総 括 表")
-        
-        # ★先にグリッド全体を描画
         draw_full_grid(y_start, bottom_margin - row_height)
-        
         y = y_start
         
+        # ★修正: SORT_ORDERを使わず、groupbyのsort=Falseで出現順を維持
         l1_summary = df.groupby('大項目', sort=False)['見積金額'].apply(lambda x: x.apply(parse_amount).sum()).reset_index()
-        def sort_key(row):
-            val = row['大項目']
-            return list(SORT_ORDER.keys()).index(val) if val in SORT_ORDER else 999
-        l1_summary['sort_idx'] = l1_summary.apply(sort_key, axis=1)
-        l1_summary = l1_summary.sort_values('sort_idx').drop('sort_idx', axis=1)
 
         for idx, row in l1_summary.iterrows():
             l1_name = row['大項目']; amount = row['見積金額']
@@ -279,11 +260,10 @@ def create_estimate_pdf(df, params):
             c.drawRightString(col_x['amt'] + col_widths['amt'] - 2*mm, y-5*mm, f"{int(amount):,}")
             y -= row_height
         
-        # フッター部分（小計・消費税・総合計）
+        # フッター
         footer_rows = 3
         footer_start_y = bottom_margin + (footer_rows * row_height)
         y = footer_start_y
-        
         labels = [("小計", total_grand), ("消費税", tax_amount), ("総合計", final_total)]
         for lbl, val in labels:
             c.setFillColor(colors.black)
@@ -295,37 +275,46 @@ def create_estimate_pdf(df, params):
         c.showPage()
         return p_num + 1
 
-    # 4. 内訳書（★グリッド描画を改善）
+    # 4. 内訳書（スプレッドシート順）
     def draw_page4_breakdown(p_num):
         raw_rows = df.to_dict('records')
         breakdown_data = {} 
+        
+        # データの順序リストを作成（出現順）
+        seen_l1 = []
+        seen_l2_by_l1 = {}
+
         for row in raw_rows:
             l1 = str(row.get('大項目', '')).strip(); l2 = str(row.get('中項目', '')).strip()
             amt = parse_amount(row.get('見積金額', 0))
             if not l1: continue
+            
+            # 出現順を記録
+            if l1 not in seen_l1:
+                seen_l1.append(l1)
+                seen_l2_by_l1[l1] = []
+            if l2 and l2 not in seen_l2_by_l1[l1]:
+                seen_l2_by_l1[l1].append(l2)
+
             if l1 not in breakdown_data: breakdown_data[l1] = {'items': {}, 'total': 0}
             if l2:
                 if l2 not in breakdown_data[l1]['items']: breakdown_data[l1]['items'][l2] = 0
                 breakdown_data[l1]['items'][l2] += amt
             breakdown_data[l1]['total'] += amt
 
-        sorted_l1_keys = sorted(breakdown_data.keys(), key=lambda k: list(SORT_ORDER.keys()).index(k) if k in SORT_ORDER else 999)
-
+        # ★修正: SORT_ORDERではなく出現順リスト(seen_l1)を使用
         draw_page_header_common(p_num, "内 訳 明 細 書 (集計)")
-        
-        # ★先にグリッド全体を描画
         draw_full_grid(y_start, bottom_margin - row_height)
-        
         y = y_start
         is_first_block = True
         
-        for l1_name in sorted_l1_keys:
+        for l1_name in seen_l1:
             data = breakdown_data[l1_name]
             l2_items = data['items']
             l1_total = data['total']
             
-            l2_order = SORT_ORDER.get(l1_name, [])
-            sorted_l2_keys = sorted(l2_items.keys(), key=lambda k: l2_order.index(k) if k in l2_order else 999)
+            # ★修正: L2も出現順リストを使用
+            sorted_l2_keys = seen_l2_by_l1[l1_name]
 
             spacer = 1 if not is_first_block else 0
             rows_needed = spacer + 1 + len(sorted_l2_keys) + 1 
@@ -335,7 +324,6 @@ def create_estimate_pdf(df, params):
                 c.showPage()
                 p_num += 1
                 draw_page_header_common(p_num, "内 訳 明 細 書 (集計)")
-                # ★新ページでもグリッド全体を描画
                 draw_full_grid(y_start, bottom_margin - row_height)
                 y = y_start
                 is_first_block = True
@@ -362,14 +350,27 @@ def create_estimate_pdf(df, params):
         c.showPage()
         return p_num + 1
 
-    # 5. 明細書（★グリッド描画を改善）
+    # 5. 明細書（スプレッドシート順）
     def draw_details(start_p_num):
         p_num = start_p_num
         data_tree = {}
+        
+        # 出現順リスト
+        seen_l1 = []
+        seen_l2_by_l1 = {}
+
         for row in df.to_dict('records'):
             l1 = str(row.get('大項目', '')).strip(); l2 = str(row.get('中項目', '')).strip()
             l3 = str(row.get('小項目', '')).strip(); l4 = str(row.get('部分項目', '')).strip()
             if not l1: continue
+            
+            # 出現順を記録
+            if l1 not in seen_l1:
+                seen_l1.append(l1)
+                seen_l2_by_l1[l1] = []
+            if l2 and l2 not in seen_l2_by_l1[l1]:
+                seen_l2_by_l1[l1].append(l2)
+
             if l1 not in data_tree: data_tree[l1] = {}
             if l2 not in data_tree[l1]: data_tree[l1][l2] = []
             item = row.copy()
@@ -379,40 +380,33 @@ def create_estimate_pdf(df, params):
                          'l3': l3, 'l4': l4})
             if item.get('名称'): data_tree[l1][l2].append(item)
 
-        sorted_l1 = sorted(data_tree.keys(), key=lambda k: list(SORT_ORDER.keys()).index(k) if k in SORT_ORDER else 999)
-
+        # ★修正: SORT_ORDERの代わりに出現順(seen_l1)を使う
         draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
-        
-        # ★先にグリッド全体を描画
         draw_full_grid(y_start, bottom_margin - row_height)
-        
         y = y_start
         is_first_l1 = True
 
-        for l1 in sorted_l1:
+        for l1 in seen_l1:
             l2_dict = data_tree[l1]
             l1_total = sum([sum([i['amt_val'] for i in items]) for items in l2_dict.values()])
             
-            l2_order = SORT_ORDER.get(l1, [])
-            sorted_l2 = sorted(l2_dict.keys(), key=lambda k: l2_order.index(k) if k in l2_order else 999)
+            # ★修正: L2も出現順
+            sorted_l2 = seen_l2_by_l1[l1]
 
             if not is_first_l1:
                 if y <= bottom_margin + row_height * 2:
                     c.showPage()
                     p_num += 1
                     draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
-                    # ★新ページでもグリッド全体を描画
                     draw_full_grid(y_start, bottom_margin - row_height)
                     y = y_start
                 else:
                     y -= row_height
 
-            # 大項目ヘッダー
             if y <= bottom_margin + row_height:
                 c.showPage()
                 p_num += 1
                 draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
-                # ★新ページでもグリッド全体を描画
                 draw_full_grid(y_start, bottom_margin - row_height)
                 y = y_start
             
@@ -468,18 +462,14 @@ def create_estimate_pdf(df, params):
                 active_l4_label = None
                 l2_has_started = False 
 
-                # 描画ループ
                 for b in block_items:
                     itype = b['type']
-
-                    # 改ページ判定
                     force_stay = (itype == 'footer_l1')
                     
                     if y - row_height < bottom_margin - 0.1 and not force_stay:
                         c.showPage()
                         p_num += 1
                         draw_page_header_common(p_num, "内 訳 明 細 書 (詳細)")
-                        # ★新ページでもグリッド全体を描画
                         draw_full_grid(y_start, bottom_margin - row_height)
                         y = y_start
                         
@@ -498,7 +488,6 @@ def create_estimate_pdf(df, params):
                             draw_bold_string(col_x['name']+INDENT_ITEM, y-5*mm, f"{active_l4_label} (続き)", 9, colors.black)
                             y -= row_height
 
-                    # 底打ちロジック (footerのみ)
                     if itype in ['footer_l2', 'footer_l1']:
                         target_row_from_bottom = 0
                         if itype == 'footer_l2' and is_last_l2: target_row_from_bottom = 1
@@ -507,7 +496,6 @@ def create_estimate_pdf(df, params):
                         if y > target_y + 0.1:
                             while y > target_y + 0.1: y -= row_height
 
-                    # --- 描画処理 ---
                     if itype == 'header_l2':
                         draw_bold_string(col_x['name']+INDENT_L2, y-5*mm, b['label'], 10, COLOR_L2)
                     elif itype == 'header_l3':
