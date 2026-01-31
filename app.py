@@ -176,41 +176,56 @@ def create_estimate_pdf(df, params):
 
     # 1. 表紙
     def draw_page1():
-# --- 1. タイトル部分（よりワイドに、文字もゆったり） ---
-        title_text = "御見積書"
-        lw = 180*mm # 線の幅を140から180に広げる
+# 1. 表紙
+    def draw_page1():
+        # --- タイトル部分 ---
+        title_text = "御   見   積   書"
+        lw = 180*mm # 線の幅
         lx = (width - lw)/2
         ly = height - 57*mm 
         
         c.saveState()
-        # 蛍光ペン（太線）：少し太く、もっと薄くして上品に
+        # 蛍光ペン（太線）
         c.setFillAlpha(0.2) 
         c.setStrokeColor(colors.HexColor('#c2c9de'))
         c.setLineWidth(14) 
         c.line(lx, ly, lx+lw, ly)
-        
-        # タイトル文字：文字の間隔を広げる(charSpace)
-        c.setFont(FONT_NAME, 45)
-        c.setFillColor(COLOR_ACCENT_BLUE)
-        c.setCharSpace(10) # 文字と文字の間を10pt空ける（これでワイドになります）
-        # drawCentredStringで文字間隔を反映させる
-        c.drawCentredString(width/2, height - 55*mm, title_text)
         c.restoreState()
 
-# --- 2. 宛名・工事名部分（下線を黒く、短く） ---
+        # タイトル文字（ワイド設定）
+        c.saveState()
+        # テキストオブジェクトを作成して文字間隔を制御
+        t = c.beginText()
+        t.setFont(FONT_NAME, 45)
+        t.setFillColor(COLOR_ACCENT_BLUE)
+        t.setCharSpace(10) # 文字間隔を広げる
+        
+        # 中央揃えにするための計算
+        tw = c.stringWidth(title_text, FONT_NAME, 45) + (len(title_text)-1) * 10
+        t.setTextOrigin(width/2 - tw/2, height - 55*mm)
+        t.textOut(title_text)
+        c.drawText(t)
+        c.restoreState()
+
+        # --- 宛名・工事名部分（下線を黒く、短く） ---
+        c.saveState()
+        c.setStrokeColor(colors.black)
+        
         # 宛名
         draw_bold_centered_string(width/2, height - 110*mm, f"{params['client_name']}    様", 32)
-        # 幅を 80*mm から 60*mm に短縮し、色を黒に固定
-        c.setStrokeColor(colors.black)
         c.setLineWidth(1)
+        # 線の長さを短く調整 (width/2 から 60mm ずつ左右に)
         c.line(width/2 - 60*mm, height - 112*mm, width/2 + 60*mm, height - 112*mm)
 
         # 工事名
         draw_bold_centered_string(width/2, height - 140*mm, f"{params['project_name']}", 24)
-        # 幅をさらに短く（50*mm）し、細い黒線に
         c.setLineWidth(0.5)
+        # さらに短く調整
         c.line(width/2 - 50*mm, height - 142*mm, width/2 + 50*mm, height - 142*mm)
         
+        c.restoreState()
+
+        # --- 自社情報 ---
         wareki = to_wareki(params['date'])
         c.setFont(FONT_NAME, 14); c.drawString(40*mm, 50*mm, wareki)
         x_co = width - 100*mm; y_co = 50*mm
@@ -219,6 +234,7 @@ def create_estimate_pdf(df, params):
         c.setFont(FONT_NAME, 11); c.drawString(x_co, y_co - 20*mm, f"〒 {params['address']}")
         c.drawString(x_co, y_co - 26*mm, f"TEL: {params['phone']}")
         if params['fax']: c.drawString(x_co + 40*mm, y_co - 26*mm, f"FAX: {params['fax']}")
+        
         c.showPage()
 
     # 2. 概要
@@ -685,6 +701,7 @@ else:
                 st.session_state.pdf_ready = False
                 st.session_state.pdf_data = None
                 st.rerun()
+
 
 
 
