@@ -176,11 +176,30 @@ def create_estimate_pdf(df, params):
 
     # 1. 表紙
     def draw_page1():
+# 1. 線の位置と幅の設定
+        lw = 140*mm
+        lx = (width - lw)/2
+        # 文字の「底」より少し下（2mm程度）を線の中心にする
+        ly = height - 57*mm 
+        
+        # 2. 蛍光ペン部分（太い線）の描画
+        c.saveState()
+        # 透明度を下げて「蛍光ペン感」を出す（0.3 = 30%の濃さ）
+        c.setFillAlpha(0.3) 
+        c.setStrokeColor(colors.HexColor('#c2c9de')) # 薄い青
+        c.setLineWidth(12) # 蛍光ペンの太さ（少し細くしてシャープに）
+        c.line(lx, ly, lx+lw, ly)
+        c.restoreState()
+
+        # 3. 装飾用の細い線（アンダーライン）
+        # 蛍光ペンのすぐ下に細い線を引いて引き締める
+        c.setLineWidth(0.5)
+        c.setStrokeColor(colors.HexColor('#26408C')) # 濃い青
+        c.line(lx, ly - 3*mm, lx+lw, ly - 3*mm)
+
+        # 4. 文字の描画
+        # 文字の座標は 55*mm のまま。線が 57*mm なので、文字の足元に線が来ます。
         draw_bold_centered_string(width/2, height - 55*mm, "御   見   積   書", 45, COLOR_ACCENT_BLUE)
-        lw = 140*mm; lx = (width - lw)/2; ly = height - 50*mm
-        c.setStrokeColor(colors.HexColor('#c2c9de')); c.setLineWidth(5); c.line(lx, ly, lx+lw, ly)
-        c.setLineWidth(0.5); c.line(lx, ly-2*mm, lx+lw, ly-2*mm)
-        c.setFillColor(colors.black); c.setStrokeColor(colors.black)
 
         draw_bold_centered_string(width/2, height - 110*mm, f"{params['client_name']}   様", 32)
         c.setLineWidth(1); c.line(width/2 - 80*mm, height - 112*mm, width/2 + 80*mm, height - 112*mm)
@@ -661,6 +680,7 @@ else:
                 st.session_state.pdf_ready = False
                 st.session_state.pdf_data = None
                 st.rerun()
+
 
 
 
