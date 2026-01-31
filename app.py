@@ -174,8 +174,6 @@ def create_estimate_pdf(df, params):
         c.setStrokeColor(colors.black); c.setLineWidth(0.5); c.rect(x_base, hy_grid, right_edge - x_base, header_height, stroke=1, fill=0)
         draw_vertical_lines(hy_grid + header_height, hy_grid)
 
-    # 1. 表紙
-    def draw_page1():
 # 1. 表紙
     def draw_page1():
         # --- タイトル部分 ---
@@ -701,6 +699,7 @@ else:
                 st.session_state.pdf_ready = False
                 st.session_state.pdf_data = None
                 st.rerun()
+
 
 
 
