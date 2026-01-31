@@ -117,7 +117,7 @@ def create_estimate_pdf(df, params):
 
     # --- グリッド設定 ---
     x_base = 15 * mm; content_width = width - 30 * mm
-    col_widths = {'name': 77*mm, 'spec': 75*mm, 'qty': 20*mm, 'unit': 10*mm, 'price': 23*mm, 'amt': 29*mm, 'rem': 0*mm}
+    col_widths = {'name': 75*mm, 'spec': 67.5*mm, 'qty': 19*mm, 'unit': 12*mm, 'price': 27*mm, 'amt': 29*mm, 'rem': 0*mm}
     col_widths['rem'] = content_width - sum(col_widths.values())
     col_x = {}
     curr_x = x_base
@@ -660,6 +660,7 @@ else:
                 st.session_state.pdf_ready = False
                 st.session_state.pdf_data = None
                 st.rerun()
+
 
 
 
