@@ -671,6 +671,11 @@ def main():
                 if st.button("URLを変更する"):
                     st.session_state.sheet_url = ""
                     st.rerun()
+
+        # サイドバーの中に配置
+if st.sidebar.button("🔄 データを最新に更新"):
+    st.cache_data.clear()  # キャッシュを全消去
+    st.rerun()             # 画面を再読み込み
         
         # Main Action Button
         if st.button("作成開始", type="primary"):
@@ -745,3 +750,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
