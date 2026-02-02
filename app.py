@@ -655,10 +655,12 @@ def main():
     if 'filename' not in st.session_state: st.session_state.filename = ""
     if 'sheet_url' not in st.session_state: st.session_state.sheet_url = ""
 
-    # Sidebar for URL Input
-    if not st.session_state.pdf_ready:
-        with st.sidebar:
-            st.header("🔑 設定")
+    # --- サイドバーの設定 ---
+    with st.sidebar:
+        st.header("🔑 設定")
+        
+        # 1. URL入力欄の制御
+        if not st.session_state.pdf_ready:
             if not st.session_state.sheet_url:
                 input_url = st.text_input(
                     "スプレッドシートURL", 
@@ -671,13 +673,21 @@ def main():
                 if st.button("URLを変更する"):
                     st.session_state.sheet_url = ""
                     st.rerun()
+        else:
+            # PDF生成後はURLのみ保持
+            input_url = st.session_state.sheet_url
 
-            # サイドバーの中に配置
-    if st.sidebar.button("🔄 データを最新に更新"):
-        st.cache_data.clear()  # キャッシュを全消去
-        st.rerun()             # 画面を再読み込み
-        
-        # Main Action Button
+        st.markdown("---") # 区切り線
+
+        # 2. キャッシュクリアボタン (これが劣化対策の肝)
+        if st.button("🔄 データを最新に更新", help="Googleシート側の修正を反映させたい時に押してください"):
+            st.cache_data.clear()  # キャッシュを全消去
+            st.success("最新の状態にリセットしました。")
+            st.rerun()
+
+    # --- メインエリアの制御 ---
+    if not st.session_state.pdf_ready:
+        # 作成開始ボタン
         if st.button("作成開始", type="primary"):
             if not input_url:
                 st.error("URLを入力してください。")
@@ -685,17 +695,16 @@ def main():
                 st.session_state.sheet_url = input_url
                 
                 with st.spinner('データを読み込み中...'):
-                    # Secrets management
                     try:
                         secrets = dict(st.secrets["gcp_service_account"])
-                    except FileNotFoundError:
-                        st.error("Secretsが見つかりません。.streamlit/secrets.tomlを確認してください。")
+                    except Exception:
+                        st.error("Secretsが見つかりません。設定を確認してください。")
                         return
 
                     df, info_dict = get_all_data_from_url(input_url, secrets)
                     
                     if df is not None and info_dict is not None:
-                        # Extract params
+                        # 生成パラメータ
                         params = {
                             'client_name': info_dict.get('施主名', ''),
                             'project_name': info_dict.get('工事名', ''),
@@ -710,11 +719,11 @@ def main():
                             'fax': info_dict.get('FAX番号', '')
                         }
                         
-                        # Generate PDF using the Class
+                        # PDF生成
                         generator = EstimatePDFGenerator(df, params)
                         pdf_bytes = generator.generate()
                         
-                        # Prepare download
+                        # ファイル名
                         date_val = params['date'].translate(str.maketrans({'/':'', '-':'', '年':'', '月':'', '日':''}))
                         spec = info_dict.get('見積もり仕様', '見積')
                         filename = f"{date_val}_{params['client_name']}_{params['project_name']}_{spec}.pdf"
@@ -723,14 +732,10 @@ def main():
                         st.session_state.filename = filename
                         st.session_state.pdf_ready = True
                         st.rerun()
-
     else:
-        # Success Screen
+        # PDF生成後の画面
         st.success("✅ PDF生成完了")
-        
-        # Retrieve data from session
         pdf_raw_data = st.session_state.pdf_data.getvalue()
-        
         st.info(f"📄 ファイル名: {st.session_state.filename}")
         
         col1, col2, col3 = st.columns([1, 2, 1])
@@ -750,5 +755,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
