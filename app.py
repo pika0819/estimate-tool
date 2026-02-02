@@ -209,7 +209,7 @@ def create_estimate_pdf(df, params):
         c.setStrokeColor(colors.black)
         
         # 宛名
-        draw_bold_centered_string(width/2, height - 110*mm, f"{params['client_name']}    様", 32)
+        draw_bold_centered_string(width/2, height - 110*mm, f"{params['client_name']}", 32)
         c.setLineWidth(1)
         # 線の長さを短く調整
         c.line(width/2 - 60*mm, height - 112*mm, width/2 + 60*mm, height - 112*mm)
@@ -691,3 +691,4 @@ else:
                 st.session_state.pdf_ready = False
                 st.session_state.pdf_data = None
                 st.rerun()
+
