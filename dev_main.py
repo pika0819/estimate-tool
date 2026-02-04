@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- セッション状態の初期化 ---
+# --- セッション状態の初期化 (ここが消えているとエラーになります) ---
 if 'df_main' not in st.session_state: st.session_state.df_main = None
 if 'df_prices' not in st.session_state: st.session_state.df_prices = None
 if 'info_dict' not in st.session_state: st.session_state.info_dict = {}
@@ -146,13 +146,12 @@ if st.session_state.df_main is not None:
     # 3. エディタ (プレイリスト) の表示
     edited_df = render_playlist_editor(filtered_df)
 
-# 4. 編集内容の同期 & 計算
+    # 4. 編集内容の同期 & 計算
     # ---------------------------------------------------------
     # 【修正版】無限ループ防止 & 安全な同期ロジック
     # ---------------------------------------------------------
     
     # A. 本当に変更があったかチェック (計算列やhidden列の差異によるループを防止)
-    # 比較対象とする「編集可能な列」だけを定義
     check_cols = ['確認', '名称', '規格', '数量', '単位', 'NET', '原単価', '掛率', '備考', '部分項目']
     # 実際に存在する列だけに絞る
     check_cols = [c for c in check_cols if c in filtered_df.columns and c in edited_df.columns]
