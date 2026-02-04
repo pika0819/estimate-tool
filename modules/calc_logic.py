@@ -42,7 +42,7 @@ def calculate_dataframe(df):
     df['荒利金額'] = df['見積金額'] - df['実行金額']
     
     # 荒利率 = 荒利金額 ÷ 見積金額 (0除算を回避)
-    df['(自)荒利率'] = df.apply(
+    df['荒利率'] = df.apply(
         lambda x: x['荒利金額'] / x['見積金額'] if x['見積金額'] != 0 else 0.0, 
         axis=1
     )
