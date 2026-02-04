@@ -53,9 +53,8 @@ with st.sidebar:
                     df_est, info, url = load_project_db(secrets, input_url)
                     
                     if df_est is not None:
-                        if df_est is not None:
                         # ---------------------------------------------------------
-                        # 【修正版】ロード時のID処理ロジック
+                        # 【修正済】ロード時のID処理ロジック (増殖バグ対策)
                         # ---------------------------------------------------------
                         # 1. sort_key を強制的に数値化（空文字対策）
                         if 'sort_key' in df_est.columns:
@@ -65,8 +64,7 @@ with st.sidebar:
                             df_est['sort_key'] = 0
 
                         # 2. IDが0の行（新規または未設定）は、連番（100, 200...）を振る
-                        #    既存のIDがある行はそのまま、0の行だけ採番する
-                        #    (今回は簡単のため、全行0なら全行リナンバリングする)
+                        #    (全行0なら全行リナンバリングする)
                         if (df_est['sort_key'] == 0).all():
                             df_est['sort_key'] = (df_est.index + 1) * 100
                         
@@ -76,6 +74,7 @@ with st.sidebar:
                         st.session_state.project_url = url
                         st.success("ロード完了")
                         st.rerun()
+
             except Exception as e:
                 st.error(f"接続エラー: {e}")
 
