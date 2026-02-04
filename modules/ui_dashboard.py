@@ -19,97 +19,97 @@ def render_folder_tree(df):
     # NaNを空文字に変換して扱いやすくする
     df_tree = df.fillna("")
     
-    # ツリーのノードリストを作成
-    tree_items = []
+    # 1. ツリー構築（表示用と、データ特定用の「影の台帳」を同時に作る）
+    tree_items = []   # sac.TreeItemのリスト（画面表示用）
+    shadow_data = []  # 裏でデータを保持するリスト（選択判定用）
     
-    # 1. 大項目ループ
+    # --- 1. 大項目 ---
     for large in sorted(df_tree['大項目'].unique()):
         if not large: continue
         
-        # 大項目の金額計算
+        # 大項目の金額
         df_l = df_tree[df_tree['大項目'] == large]
         l_total = df_l['見積金額'].sum()
         
         mid_nodes = []
+        mid_shadow = []
         
-        # 2. 中項目ループ
+        # --- 2. 中項目 ---
         for mid in sorted(df_l['中項目'].unique()):
             if not mid: continue
             
-            # 中項目の金額計算
+            # 中項目の金額
             df_m = df_l[df_l['中項目'] == mid]
             m_total = df_m['見積金額'].sum()
             
             small_nodes = []
+            small_shadow = []
             
-            # 3. 小項目ループ
+            # --- 3. 小項目 ---
             for small in sorted(df_m['小項目'].unique()):
-                # 小項目ごとのデータを抽出
                 df_s = df_m[df_m['小項目'] == small]
                 
-                # --- 小項目が「空」の場合（＝部分項目が中項目に直結する場合） ---
+                # A. 小項目が「空」の場合（＝部分項目が中項目の直下に来る）
                 if not small:
-                    # 部分項目を直接 中項目の子供 として追加
                     for part in sorted(df_s['部分項目'].unique()):
                         if not part: continue
                         p_total = df_s[df_s['部分項目'] == part]['見積金額'].sum()
                         
-                        # IDキー: "大::中::小::部分"
-                        key = f"{large}::{mid}::::{part}"
-                        small_nodes.append(sac.TreeItem(
-                            get_label(part, p_total), 
-                            icon='file-text', 
-                            key=key
-                        ))
+                        # 中項目の子供として直接追加
+                        small_nodes.append(sac.TreeItem(get_label(part, p_total), icon='file-text'))
+                        # 影の台帳: (大, 中, なし, 部分)
+                        small_shadow.append((large, mid, None, part))
                 
-                # --- 小項目がある場合 ---
+                # B. 小項目がある場合
                 else:
                     s_total = df_s['見積金額'].sum()
                     part_nodes = []
+                    part_shadow = []
                     
-                    # 4. 部分項目ループ
+                    # --- 4. 部分項目 ---
                     for part in sorted(df_s['部分項目'].unique()):
                         if not part: continue
                         p_total = df_s[df_s['部分項目'] == part]['見積金額'].sum()
                         
-                        key = f"{large}::{mid}::{small}::{part}"
-                        part_nodes.append(sac.TreeItem(
-                            get_label(part, p_total), 
-                            icon='file-text', 
-                            key=key
-                        ))
+                        part_nodes.append(sac.TreeItem(get_label(part, p_total), icon='file-text'))
+                        # 影の台帳: (大, 中, 小, 部分)
+                        part_shadow.append((large, mid, small, part))
                     
-                    # 小項目ノード作成（子供がいればフォルダ、いなければファイル扱い）
-                    key = f"{large}::{mid}::{small}::"
+                    # 小項目ノード追加
                     icon = 'folder' if part_nodes else 'file-text'
-                    small_nodes.append(sac.TreeItem(
-                        get_label(small, s_total), 
-                        icon=icon, 
-                        children=part_nodes, 
-                        key=key
-                    ))
+                    small_nodes.append(sac.TreeItem(get_label(small, s_total), icon=icon, children=part_nodes))
+                    
+                    # 影の台帳: 自身のデータ + 子供たち
+                    # 子供がいる場合は、自分自身が選ばれたら (大, 中, 小, None) とする
+                    small_shadow_item = {
+                        "value": (large, mid, small, None),
+                        "children": part_shadow
+                    }
+                    small_shadow.append(small_shadow_item)
 
-            # 中項目ノード作成
-            key = f"{large}::{mid}::::"
-            mid_nodes.append(sac.TreeItem(
-                get_label(mid, m_total), 
-                icon='folder', 
-                children=small_nodes, 
-                key=key
-            ))
+            # 中項目ノード追加
+            mid_nodes.append(sac.TreeItem(get_label(mid, m_total), icon='folder', children=small_nodes))
             
-        # 大項目ノード作成
-        key = f"{large}::::::"
-        tree_items.append(sac.TreeItem(
-            get_label(large, l_total), 
-            icon='folder', 
-            children=mid_nodes, 
-            key=key
-        ))
+            # 影の台帳: 中項目の定義
+            mid_shadow_item = {
+                "value": (large, mid, None, None),
+                "children": small_shadow
+            }
+            mid_shadow.append(mid_shadow_item)
+            
+        # 大項目ノード追加
+        tree_items.append(sac.TreeItem(get_label(large, l_total), icon='folder', children=mid_nodes))
+        
+        # 影の台帳: 大項目の定義
+        large_shadow_item = {
+            "value": (large, None, None, None),
+            "children": mid_shadow
+        }
+        shadow_data.append(large_shadow_item)
 
     # --- ツリー表示 ---
-    # return_index=Falseにすると、key（大::中::小::部分）が返ってくる
-    selected_key = sac.tree(
+    # return_index=True にして、[0, 1, 2] のようなインデックス配列を受け取る
+    selected_indices = sac.tree(
         items=tree_items,
         label="",
         index=0,
@@ -117,24 +117,45 @@ def render_folder_tree(df):
         size='sm',
         icon='folder',
         open_all=False,
-        return_index=False
+        return_index=True
     )
     
-    # 選択されたキーを分解して返す
-    if selected_key:
-        try:
-            l, m, s, p = selected_key.split("::")
-            # 空文字ならNoneに戻す（フィルタリング用）
-            return (l or None, m or None, s or None, p or None)
-        except:
+    # --- 選択されたインデックスからデータを復元する ---
+    try:
+        if selected_indices is None:
             return None, None, None, None
+            
+        # 影の台帳をたどる
+        current_level = shadow_data
+        selected_value = None
+        
+        # インデックスの階層を順番に降りていく
+        # 例: [0, 2] なら、大項目の0番目 -> その子供(中項目)の2番目
+        for idx in selected_indices:
+            node = current_level[idx]
+            
+            # nodeが辞書なら（子供がいるフォルダ）、childrenへ潜る
+            if isinstance(node, dict):
+                selected_value = node["value"] # とりあえず今の階層の値を保持
+                current_level = node["children"]
+            # nodeがタプルなら（末端のファイル）、それが答え
+            else:
+                selected_value = node
+                current_level = [] # もう子供はいない
+        
+        if selected_value:
+            return selected_value
+            
+    except Exception as e:
+        # 万が一インデックスがズレた場合などの安全策
+        st.error(f"Tree Selection Error: {e}")
+        return None, None, None, None
             
     return None, None, None, None
 
-
 def render_playlist_editor(filtered_df):
     """
-    メイン画面に表示する明細リスト（変更なし、前回と同じ）
+    メイン画面に表示する明細リスト
     """
     column_config = {
         "確認": st.column_config.CheckboxColumn("確認", width="small"),
