@@ -3,7 +3,7 @@ import pandas as pd
 import uuid
 from datetime import datetime
 
-# 作成したモジュールをインポート
+# モジュールインポート
 from modules.data_loader import load_master_db, load_project_db, save_project_data, add_master_price_item
 from modules.calc_logic import calculate_dataframe, renumber_sort_keys
 from modules.ui_dashboard import render_folder_tree, render_playlist_editor
@@ -11,32 +11,30 @@ from modules.ui_dashboard import render_folder_tree, render_playlist_editor
 # --- ページ設定 ---
 st.set_page_config(layout="wide", page_title="Dev: 見積システム")
 
-# CSS: 見やすさ調整
 st.markdown("""
 <style>
     .stApp { font-size: 1.05rem; }
-    /* テーブルヘッダーの背景色 */
     div[data-testid="stDataFrame"] th { background-color: #f0f2f6; }
-    /* ボタンの余白調整 */
     .stButton { margin-top: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- セッション状態の初期化 (ここが消えているとエラーになります) ---
+# --- 初期化 ---
 if 'df_main' not in st.session_state: st.session_state.df_main = None
 if 'df_prices' not in st.session_state: st.session_state.df_prices = None
 if 'info_dict' not in st.session_state: st.session_state.info_dict = {}
 if 'project_url' not in st.session_state: st.session_state.project_url = ""
+# 諸経費率の初期値
+if 'general_exp_rate' not in st.session_state: st.session_state.general_exp_rate = 10.0
 
 # ==========================================
-# サイドバー：DB接続 & フォルダツリー
+# サイドバー
 # ==========================================
 with st.sidebar:
     st.header("🛠️ 開発用メニュー")
     
-    # 1. DB接続エリア (データ未ロード時のみ開く)
+    # 1. DB接続
     with st.expander("🔌 DB接続設定", expanded=(st.session_state.df_main is None)):
-        # Secretsから案件URLのデフォルトを取得
         default_url = st.secrets["app_config"].get("default_project_url", "")
         input_url = st.text_input("案件シートURL", value=default_url)
         
@@ -44,127 +42,63 @@ with st.sidebar:
             try:
                 with st.spinner("マスタと案件データをロード中..."):
                     secrets = dict(st.secrets)
-                    
-                    # A. マスタ読込 (定価表・項目表)
                     df_items, df_prices = load_master_db(secrets)
                     st.session_state.df_prices = df_prices
-                    
-                    # B. 案件読込
                     df_est, info, url = load_project_db(secrets, input_url)
                     
                     if df_est is not None:
-                        # ---------------------------------------------------------
-                        # 【修正済】ロード時のID処理ロジック (増殖バグ対策)
-                        # ---------------------------------------------------------
-                        # 1. sort_key を強制的に数値化（空文字対策）
+                        # ID処理
                         if 'sort_key' in df_est.columns:
-                            # エラー(空文字など)はNaNになり、その後0に変換
                             df_est['sort_key'] = pd.to_numeric(df_est['sort_key'], errors='coerce').fillna(0)
                         else:
                             df_est['sort_key'] = 0
 
-                        # 2. IDが0の行（新規または未設定）は、連番（100, 200...）を振る
-                        #    (全行0なら全行リナンバリングする)
                         if (df_est['sort_key'] == 0).all():
                             df_est['sort_key'] = (df_est.index + 1) * 100
                         
-                        # 3. 計算実行
                         st.session_state.df_main = calculate_dataframe(df_est)
                         st.session_state.info_dict = info
                         st.session_state.project_url = url
                         st.success("ロード完了")
                         st.rerun()
-
             except Exception as e:
                 st.error(f"接続エラー: {e}")
 
     st.markdown("---")
 
-    # 2. フォルダツリー (データがある場合のみ表示)
-    sel_large, sel_mid, sel_small = "(すべて)", "(すべて)", "(すべて)"
+    # 2. フォルダツリー (4階層対応)
+    sel_large, sel_mid, sel_small, sel_part = "(すべて)", "(すべて)", "(すべて)", "(すべて)"
     
     if st.session_state.df_main is not None:
-        # 階層選択ツリーを表示
-        sel_large, sel_mid, sel_small = render_folder_tree(st.session_state.df_main)
+        sel_large, sel_mid, sel_small, sel_part = render_folder_tree(st.session_state.df_main)
         
-        # --- 集計エリア (修正版 v2) ---
         st.markdown("---")
-        
-        # 1. 全体集計 (MetricではなくMarkdownで確実に表示)
-        total_ex_tax = st.session_state.df_main['見積金額'].sum()
-        cost_total = st.session_state.df_main['実行金額'].sum()
-        tax_amount = int(total_ex_tax * 0.1)
-        grand_total = total_ex_tax + tax_amount
-        profit = total_ex_tax - cost_total
-        
-        # CSSで「レスポンシブな表」風のデザインを作る
-        st.markdown(f"""
-        <div style="display: flex; gap: 20px; flex-wrap: wrap;">
-            <div style="flex: 1; min-width: 150px; background: #f0f2f6; padding: 15px; border-radius: 8px;">
-                <div style="font-size: 0.9rem; color: #555;">見積総額 (税抜)</div>
-                <div style="font-size: 1.5rem; font-weight: bold; color: #333;">¥{total_ex_tax:,.0f}</div>
-            </div>
-            <div style="flex: 1; min-width: 150px; background: #f0f2f6; padding: 15px; border-radius: 8px;">
-                <div style="font-size: 0.9rem; color: #555;">消費税 (10%)</div>
-                <div style="font-size: 1.5rem; font-weight: bold; color: #333;">¥{tax_amount:,.0f}</div>
-            </div>
-            <div style="flex: 1; min-width: 150px; background: #e0f7fa; padding: 15px; border-radius: 8px; border: 1px solid #00acc1;">
-                <div style="font-size: 0.9rem; color: #006064;">税込合計</div>
-                <div style="font-size: 1.8rem; font-weight: bold; color: #006064;">¥{grand_total:,.0f}</div>
-            </div>
-        </div>
-        <div style="margin-top: 5px; text-align: right; color: #666; font-size: 0.9rem;">
-            想定粗利: ¥{profit:,.0f}
-        </div>
-        """, unsafe_allow_html=True)
-
-        # 2. 項目別内訳 (ドリルダウン対応 & カンマ表示)
-        with st.expander("📊 項目別内訳を見る"):
-            # 大・中・小・部分項目ですべてグループ化
-            # 見やすくするために、金額が0のものは除外しても良いかもしれません
-            summary_df = st.session_state.df_main.groupby(
-                ['大項目', '中項目', '小項目', '部分項目'], dropna=False
-            )[['見積金額']].sum().reset_index()
-            
-            # 金額があるものだけ抽出 & ソート
-            summary_df = summary_df[summary_df['見積金額'] != 0].sort_values('見積金額', ascending=False)
-            
-            # インデックスを隠して表示 & カンマ区切り適用
-            # st.dataframe の column_config で format="¥%.0f" だとカンマがつかないことがあるため、
-            # 確実に見せるために「表示用文字列カラム」を作って表示する手法をとります
-            summary_show = summary_df.copy()
-            summary_show['見積金額'] = summary_show['見積金額'].apply(lambda x: f"¥{x:,.0f}")
-            
-            st.dataframe(
-                summary_show,
-                use_container_width=True,
-                hide_index=True
-            )
+        # 諸経費設定
+        st.write("💰 **諸経費設定**")
+        st.session_state.general_exp_rate = st.number_input(
+            "諸経費率 (%)", value=st.session_state.general_exp_rate, step=1.0, format="%.1f"
+        )
         
         # 保存ボタン
         st.markdown("---")
         if st.button("💾 保存して整理", type="primary", use_container_width=True):
-            # ... (中身はそのまま) ...
-            with st.spinner("ソート順を整理して保存中..."):
-                # 1. リナンバリング (100, 200...)
+            with st.spinner("保存中..."):
                 clean_df = renumber_sort_keys(st.session_state.df_main)
-                # 2. 保存実行
                 secrets = dict(st.secrets)
                 if save_project_data(secrets, st.session_state.project_url, clean_df):
                     st.session_state.df_main = clean_df
-                    st.success("保存完了！シートを更新しました。")
+                    st.success("保存完了！")
                 else:
                     st.error("保存失敗")
 
 # ==========================================
-# メインエリア：プレイリスト編集
+# メインエリア
 # ==========================================
 if st.session_state.df_main is not None:
-    # 1. ヘッダー情報
     project_name = st.session_state.info_dict.get('工事名', '新規案件')
     st.subheader(f"案件: {project_name}")
     
-    # 2. データのフィルタリング (フォルダの中身を表示)
+    # フィルタリング
     df = st.session_state.df_main
     mask = [True] * len(df)
     
@@ -178,57 +112,76 @@ if st.session_state.df_main is not None:
     if sel_small != "(すべて)":
         mask = mask & (df['小項目'] == sel_small)
         current_path.append(sel_small)
+    if sel_part != "(すべて)":
+        mask = mask & (df['部分項目'] == sel_part)
+        current_path.append(sel_part)
     
-    # パンくずリスト表示
     path_str = " > ".join(current_path) if current_path else "全データ"
     st.caption(f"📂 現在の場所: **{path_str}**")
 
-    # 表示用データフレーム作成
-    filtered_df = df[mask].copy()
+    # 集計ロジック (諸経費込み)
+    direct_cost = st.session_state.df_main['見積金額'].sum() # 直接工事費
+    gen_exp_amount = int(direct_cost * (st.session_state.general_exp_rate / 100)) # 諸経費
+    total_ex_tax = direct_cost + gen_exp_amount # 税抜合計
+    tax_amount = int(total_ex_tax * 0.1) # 消費税
+    grand_total = total_ex_tax + tax_amount # 税込合計
     
-    # ソート順を適用 (sort_key昇順)
+    cost_total = st.session_state.df_main['実行金額'].sum()
+    profit = total_ex_tax - cost_total
+
+    # 金額表示 (CSSデザイン)
+    st.markdown(f"""
+    <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 20px;">
+        <div style="flex: 1; background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+            <div style="color: #666; font-size: 0.8rem;">直接工事費</div>
+            <div style="font-weight: bold; font-size: 1.1rem;">¥{direct_cost:,.0f}</div>
+        </div>
+        <div style="flex: 1; background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+            <div style="color: #666; font-size: 0.8rem;">諸経費 ({st.session_state.general_exp_rate}%)</div>
+            <div style="font-weight: bold; font-size: 1.1rem;">¥{gen_exp_amount:,.0f}</div>
+        </div>
+        <div style="flex: 1; background: #e3f2fd; padding: 10px; border: 1px solid #2196f3; border-radius: 6px;">
+            <div style="color: #1565c0; font-size: 0.8rem;">見積総額 (税抜)</div>
+            <div style="font-weight: bold; font-size: 1.3rem; color: #1565c0;">¥{total_ex_tax:,.0f}</div>
+        </div>
+        <div style="flex: 1; background: #e0f2f1; padding: 10px; border: 1px solid #009688; border-radius: 6px;">
+            <div style="color: #00695c; font-size: 0.8rem;">税込合計</div>
+            <div style="font-weight: bold; font-size: 1.4rem; color: #00695c;">¥{grand_total:,.0f}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # フィルタ済みデータの作成
+    filtered_df = df[mask].copy()
     if 'sort_key' in filtered_df.columns:
         filtered_df = filtered_df.sort_values('sort_key')
 
-    # 3. エディタ (プレイリスト) の表示
+    # エディタ表示
     edited_df = render_playlist_editor(filtered_df)
 
-    # 4. 編集内容の同期 & 計算
-    # ---------------------------------------------------------
-    # 【修正版】無限ループ防止 (空回り防止機能付き)
-    # ---------------------------------------------------------
-    
-    # A. 本当に変更があったかチェック
-    check_cols = ['確認', '名称', '規格', '数量', '単位', 'NET', '原単価', '掛率', '備考', '部分項目']
+    # 同期処理
+    check_cols = ['確認', '名称', '規格', '数量', '単位', 'NET', '原単価', '掛率', '備考']
     check_cols = [c for c in check_cols if c in filtered_df.columns and c in edited_df.columns]
     
-    # 値の比較（型ズレによる誤検知を防ぐため、一度文字列化して比較する）
     df_src = filtered_df[check_cols].fillna("").astype(str).reset_index(drop=True)
     df_dst = edited_df[check_cols].fillna("").astype(str).reset_index(drop=True)
     has_changes = not df_src.equals(df_dst)
 
     if has_changes:
-        # 再計算
         recalc_fragment = calculate_dataframe(edited_df)
-        
-        # 実際にデータフレームを更新したかどうかのフラグ
         data_changed = False
         
-        # 大元のデータ(st.session_state.df_main)を更新する
         for index, row in recalc_fragment.iterrows():
             key = row.get('sort_key', 0)
             
-            # --- 新規行(keyが0または空)の場合 ---
             if pd.isna(key) or key == 0:
-                # 名称が空の行は「追加しない」し、変更ともみなさない
-                if not row['名称'] or str(row['名称']).strip() == "":
-                    continue
+                if not row['名称'] or str(row['名称']).strip() == "": continue
 
-                # ここまで来たら「本当に追加する」
                 new_row = row.copy()
                 new_row['大項目'] = sel_large if sel_large != "(すべて)" else ""
                 new_row['中項目'] = sel_mid if sel_mid != "(すべて)" else ""
                 new_row['小項目'] = sel_small if sel_small != "(すべて)" else ""
+                new_row['部分項目'] = sel_part if sel_part != "(すべて)" else "" # 部分項目も付与
                 
                 max_key = st.session_state.df_main['sort_key'].max()
                 if pd.isna(max_key): max_key = 0
@@ -236,19 +189,14 @@ if st.session_state.df_main is not None:
                 
                 st.session_state.df_main = pd.concat([st.session_state.df_main, pd.DataFrame([new_row])], ignore_index=True)
                 data_changed = True
-            
-            # --- 既存行の場合 ---
             else:
                 idxs = st.session_state.df_main[st.session_state.df_main['sort_key'] == key].index
                 if not idxs.empty:
-                    cols_to_upd = ['確認', '名称', '規格', '数量', '単位', 'NET', '原単価', '掛率', '売単価', '見積金額', '(自)荒利率', '備考', '部分項目']
+                    cols_to_upd = ['確認', '名称', '規格', '数量', '単位', 'NET', '原単価', '掛率', '売単価', '見積金額', '(自)荒利率', '備考']
                     valid_cols = [c for c in cols_to_upd if c in row.index and c in st.session_state.df_main.columns]
-                    
-                    # 値を書き込む
                     st.session_state.df_main.loc[idxs[0], valid_cols] = row[valid_cols].values
                     data_changed = True
         
-        # 【重要】実際にデータの書き換えが発生したときだけ再描画する
         if data_changed:
             st.rerun()
 
