@@ -18,7 +18,7 @@ from reportlab.lib import colors
 # ■ Configuration & Constants
 # ---------------------------------------------------------
 class Config:
-    SHEET_NAME = "T_見積入力"
+    SHEET_NAME = "見積り集計表"
     INFO_SHEET_NAME = "現場情報"
     FONT_FILE = "NotoSerifJP-Regular.ttf"
     FONT_NAME = "NotoSerifJP"
@@ -755,3 +755,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
