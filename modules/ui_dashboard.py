@@ -9,29 +9,29 @@ def get_label(name, amount):
 def render_folder_tree(df):
     """
     サイドバーにエクスプローラー風のツリーを表示する
-    （ラベル名でマッチングを行う安定版）
+    （IDキー方式：最もエラーが起きにくい堅牢な実装）
     """
     st.sidebar.markdown("### 📂 フォルダ (階層)")
     
     if df is None or df.empty:
         return None, None, None, None
 
-    # NaNを空文字に変換
     df_tree = df.fillna("")
     
-    # ツリーアイテムリストと、ラベルからデータを引くための辞書
     tree_items = []
-    label_map = {} 
+    # キーからデータを引くための辞書
+    # key: "unique_id_string" -> value: (large, mid, small, part)
+    key_map = {} 
     
     # --- 1. 大項目 ---
     for large in sorted(df_tree['大項目'].unique()):
         if not large: continue
         
-        # 金額集計とラベル作成
         l_total = df_tree[df_tree['大項目'] == large]['見積金額'].sum()
         l_label = get_label(large, l_total)
-        # 辞書に登録
-        label_map[l_label] = (large, None, None, None)
+        l_key = f"L::{large}" # 一意なキーを作成
+        
+        key_map[l_key] = (large, None, None, None)
         
         mid_nodes = []
         df_l = df_tree[df_tree['大項目'] == large]
@@ -42,7 +42,9 @@ def render_folder_tree(df):
             
             m_total = df_l[df_l['中項目'] == mid]['見積金額'].sum()
             m_label = get_label(mid, m_total)
-            label_map[m_label] = (large, mid, None, None)
+            m_key = f"M::{large}::{mid}"
+            
+            key_map[m_key] = (large, mid, None, None)
             
             small_nodes = []
             df_m = df_l[df_l['中項目'] == mid]
@@ -51,41 +53,44 @@ def render_folder_tree(df):
             for small in sorted(df_m['小項目'].unique()):
                 df_s = df_m[df_m['小項目'] == small]
                 
-                # A. 小項目なし（部分項目が直結）
+                # A. 小項目なし
                 if not small:
                     for part in sorted(df_s['部分項目'].unique()):
                         if not part: continue
                         p_total = df_s[df_s['部分項目'] == part]['見積金額'].sum()
                         p_label = get_label(part, p_total)
+                        p_key = f"P::{large}::{mid}::None::{part}"
                         
-                        small_nodes.append(sac.TreeItem(p_label, icon='file-text'))
-                        label_map[p_label] = (large, mid, None, part)
+                        small_nodes.append(sac.TreeItem(p_label, icon='file-text', key=p_key))
+                        key_map[p_key] = (large, mid, None, part)
                 
                 # B. 小項目あり
                 else:
                     s_total = df_s['見積金額'].sum()
                     s_label = get_label(small, s_total)
-                    label_map[s_label] = (large, mid, small, None)
+                    s_key = f"S::{large}::{mid}::{small}"
+                    
+                    key_map[s_key] = (large, mid, small, None)
                     
                     part_nodes = []
                     for part in sorted(df_s['部分項目'].unique()):
                         if not part: continue
                         p_total = df_s[df_s['部分項目'] == part]['見積金額'].sum()
                         p_label = get_label(part, p_total)
+                        p_key = f"P::{large}::{mid}::{small}::{part}"
                         
-                        part_nodes.append(sac.TreeItem(p_label, icon='file-text'))
-                        label_map[p_label] = (large, mid, small, part)
+                        part_nodes.append(sac.TreeItem(p_label, icon='file-text', key=p_key))
+                        key_map[p_key] = (large, mid, small, part)
                     
                     icon = 'folder' if part_nodes else 'file-text'
-                    small_nodes.append(sac.TreeItem(s_label, icon=icon, children=part_nodes))
+                    small_nodes.append(sac.TreeItem(s_label, icon=icon, children=part_nodes, key=s_key))
 
-            mid_nodes.append(sac.TreeItem(m_label, icon='folder', children=small_nodes))
+            mid_nodes.append(sac.TreeItem(m_label, icon='folder', children=small_nodes, key=m_key))
             
-        tree_items.append(sac.TreeItem(l_label, icon='folder', children=mid_nodes))
+        tree_items.append(sac.TreeItem(l_label, icon='folder', children=mid_nodes, key=l_key))
 
     # --- ツリー表示 ---
-    # return_index=False でラベル文字列を受け取る設定にする（これがエラー回避の鍵です）
-    selected_label = sac.tree(
+    selected_key = sac.tree(
         items=tree_items,
         label="",
         index=0,
@@ -93,12 +98,19 @@ def render_folder_tree(df):
         size='sm',
         icon='folder',
         open_all=False,
-        return_index=False
+        return_index=False 
     )
     
-    # 選ばれたラベルを元にデータを特定して返す
-    if selected_label in label_map:
-        return label_map[selected_label]
+    # 【修正ポイント】 リストで返ってきた場合の安全策
+    if isinstance(selected_key, list):
+        if len(selected_key) > 0:
+            selected_key = selected_key[0]
+        else:
+            selected_key = None
+
+    # キーを使ってデータを特定
+    if selected_key in key_map:
+        return key_map[selected_key]
             
     return None, None, None, None
 
@@ -106,20 +118,15 @@ def render_playlist_editor(filtered_df):
     """
     メイン画面に表示する明細リスト
     """
-    # 表示用にデータをコピー
     df_display = filtered_df.copy()
     
-    # -------------------------------------------------------
-    # 【ここがポイント】
-    # 自動計算される列（NET, 売単価, 見積金額）は、
-    # 数字ではなく「文字」として扱い、カンマ区切りに強制変換する。
-    # -------------------------------------------------------
+    # 金額列をカンマ区切りの「文字列」に変換 (¥マークなし、カンマのみ)
     format_cols = ['NET', '売単価', '見積金額']
     for col in format_cols:
         if col in df_display.columns:
-            # 1000000 -> "1,000,000" に変換 (¥マークなし)
+            # 安全に数値変換してからフォーマット
             df_display[col] = df_display[col].apply(
-                lambda x: f"{int(x):,}" if pd.notnull(x) and str(x).strip() != "" else ""
+                lambda x: f"{int(x):,}" if pd.notnull(x) and str(x).strip() != "" and str(x).replace('.','').replace('-','').isdigit() else ""
             )
 
     column_config = {
@@ -132,11 +139,10 @@ def render_playlist_editor(filtered_df):
         "数量": st.column_config.NumberColumn("数量", step=0.1, format="%.2f", width="small"),
         "単位": st.column_config.TextColumn("単位", width="small"),
         
-        # 編集する「原単価」は入力トラブル防止のため数値のまま
         "原単価": st.column_config.NumberColumn("原単価", format="%d", step=100),
         "掛率": st.column_config.NumberColumn("掛率", step=0.01, format="%.2f", width="small"),
         
-        # 表示専用列は TextColumn にして、作ったカンマ区切り文字列をそのまま見せる
+        # 文字列として表示するためのTextColumn設定
         "NET": st.column_config.TextColumn("NET", width="small"),
         "売単価": st.column_config.TextColumn("売単価", width="small"),
         "見積金額": st.column_config.TextColumn("見積金額", width="medium"),
