@@ -87,32 +87,58 @@ with st.sidebar:
         # 階層選択ツリーを表示
         sel_large, sel_mid, sel_small = render_folder_tree(st.session_state.df_main)
         
-        # --- 集計エリア (修正版) ---
+        # --- 集計エリア (修正版 v2) ---
         st.markdown("---")
         
-        # 1. 全体集計
+        # 1. 全体集計 (MetricではなくMarkdownで確実に表示)
         total_ex_tax = st.session_state.df_main['見積金額'].sum()
         cost_total = st.session_state.df_main['実行金額'].sum()
         tax_amount = int(total_ex_tax * 0.1)
         grand_total = total_ex_tax + tax_amount
         profit = total_ex_tax - cost_total
         
-        # 3カラムで表示
-        m1, m2, m3 = st.columns(3)
-        m1.metric("見積総額 (税抜)", f"¥{total_ex_tax:,.0f}")
-        m2.metric("消費税 (10%)", f"¥{tax_amount:,.0f}")
-        m3.metric("税込合計", f"¥{grand_total:,.0f}", delta="請求金額")
-        
-        st.caption(f"想定粗利: ¥{profit:,.0f}")
+        # CSSで「レスポンシブな表」風のデザインを作る
+        st.markdown(f"""
+        <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 150px; background: #f0f2f6; padding: 15px; border-radius: 8px;">
+                <div style="font-size: 0.9rem; color: #555;">見積総額 (税抜)</div>
+                <div style="font-size: 1.5rem; font-weight: bold; color: #333;">¥{total_ex_tax:,.0f}</div>
+            </div>
+            <div style="flex: 1; min-width: 150px; background: #f0f2f6; padding: 15px; border-radius: 8px;">
+                <div style="font-size: 0.9rem; color: #555;">消費税 (10%)</div>
+                <div style="font-size: 1.5rem; font-weight: bold; color: #333;">¥{tax_amount:,.0f}</div>
+            </div>
+            <div style="flex: 1; min-width: 150px; background: #e0f7fa; padding: 15px; border-radius: 8px; border: 1px solid #00acc1;">
+                <div style="font-size: 0.9rem; color: #006064;">税込合計</div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #006064;">¥{grand_total:,.0f}</div>
+            </div>
+        </div>
+        <div style="margin-top: 5px; text-align: right; color: #666; font-size: 0.9rem;">
+            想定粗利: ¥{profit:,.0f}
+        </div>
+        """, unsafe_allow_html=True)
 
-        # 2. 項目別集計 (現在の大項目ごとの内訳)
+        # 2. 項目別内訳 (ドリルダウン対応 & カンマ表示)
         with st.expander("📊 項目別内訳を見る"):
-            # 大項目でグルーピングして集計
-            summary_df = st.session_state.df_main.groupby('大項目')[['見積金額']].sum().sort_values('見積金額', ascending=False)
+            # 大・中・小・部分項目ですべてグループ化
+            # 見やすくするために、金額が0のものは除外しても良いかもしれません
+            summary_df = st.session_state.df_main.groupby(
+                ['大項目', '中項目', '小項目', '部分項目'], dropna=False
+            )[['見積金額']].sum().reset_index()
+            
+            # 金額があるものだけ抽出 & ソート
+            summary_df = summary_df[summary_df['見積金額'] != 0].sort_values('見積金額', ascending=False)
+            
+            # インデックスを隠して表示 & カンマ区切り適用
+            # st.dataframe の column_config で format="¥%.0f" だとカンマがつかないことがあるため、
+            # 確実に見せるために「表示用文字列カラム」を作って表示する手法をとります
+            summary_show = summary_df.copy()
+            summary_show['見積金額'] = summary_show['見積金額'].apply(lambda x: f"¥{x:,.0f}")
+            
             st.dataframe(
-                summary_df,
-                column_config={"見積金額": st.column_config.NumberColumn(format="¥%d")},
-                use_container_width=True
+                summary_show,
+                use_container_width=True,
+                hide_index=True
             )
         
         # 保存ボタン
