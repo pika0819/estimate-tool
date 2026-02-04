@@ -87,17 +87,38 @@ with st.sidebar:
         # 階層選択ツリーを表示
         sel_large, sel_mid, sel_small = render_folder_tree(st.session_state.df_main)
         
-        # 簡易集計
+        # --- 集計エリア (修正版) ---
         st.markdown("---")
-        total = st.session_state.df_main['見積金額'].sum()
-        cost = st.session_state.df_main['実行金額'].sum()
-        profit = total - cost
-        st.metric("見積総額 (税抜)", f"¥{total:,.0f}")
-        st.metric("想定粗利", f"¥{profit:,.0f}")
+        
+        # 1. 全体集計
+        total_ex_tax = st.session_state.df_main['見積金額'].sum()
+        cost_total = st.session_state.df_main['実行金額'].sum()
+        tax_amount = int(total_ex_tax * 0.1)
+        grand_total = total_ex_tax + tax_amount
+        profit = total_ex_tax - cost_total
+        
+        # 3カラムで表示
+        m1, m2, m3 = st.columns(3)
+        m1.metric("見積総額 (税抜)", f"¥{total_ex_tax:,.0f}")
+        m2.metric("消費税 (10%)", f"¥{tax_amount:,.0f}")
+        m3.metric("税込合計", f"¥{grand_total:,.0f}", delta="請求金額")
+        
+        st.caption(f"想定粗利: ¥{profit:,.0f}")
+
+        # 2. 項目別集計 (現在の大項目ごとの内訳)
+        with st.expander("📊 項目別内訳を見る"):
+            # 大項目でグルーピングして集計
+            summary_df = st.session_state.df_main.groupby('大項目')[['見積金額']].sum().sort_values('見積金額', ascending=False)
+            st.dataframe(
+                summary_df,
+                column_config={"見積金額": st.column_config.NumberColumn(format="¥%d")},
+                use_container_width=True
+            )
         
         # 保存ボタン
         st.markdown("---")
         if st.button("💾 保存して整理", type="primary", use_container_width=True):
+            # ... (中身はそのまま) ...
             with st.spinner("ソート順を整理して保存中..."):
                 # 1. リナンバリング (100, 200...)
                 clean_df = renumber_sort_keys(st.session_state.df_main)
