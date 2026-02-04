@@ -148,20 +148,24 @@ if st.session_state.df_main is not None:
 
     # 4. 編集内容の同期 & 計算
     # ---------------------------------------------------------
-    # 【修正版】無限ループ防止 & 安全な同期ロジック
+    # 【修正版】無限ループ防止 (空回り防止機能付き)
     # ---------------------------------------------------------
     
-    # A. 本当に変更があったかチェック (計算列やhidden列の差異によるループを防止)
+    # A. 本当に変更があったかチェック
     check_cols = ['確認', '名称', '規格', '数量', '単位', 'NET', '原単価', '掛率', '備考', '部分項目']
-    # 実際に存在する列だけに絞る
     check_cols = [c for c in check_cols if c in filtered_df.columns and c in edited_df.columns]
     
-    # インデックスをリセットして値だけ比較
-    has_changes = not filtered_df[check_cols].reset_index(drop=True).equals(edited_df[check_cols].reset_index(drop=True))
+    # 値の比較（型ズレによる誤検知を防ぐため、一度文字列化して比較する）
+    df_src = filtered_df[check_cols].fillna("").astype(str).reset_index(drop=True)
+    df_dst = edited_df[check_cols].fillna("").astype(str).reset_index(drop=True)
+    has_changes = not df_src.equals(df_dst)
 
     if has_changes:
-        # 再計算 (数量x単価など)
+        # 再計算
         recalc_fragment = calculate_dataframe(edited_df)
+        
+        # 実際にデータフレームを更新したかどうかのフラグ
+        data_changed = False
         
         # 大元のデータ(st.session_state.df_main)を更新する
         for index, row in recalc_fragment.iterrows():
@@ -169,23 +173,22 @@ if st.session_state.df_main is not None:
             
             # --- 新規行(keyが0または空)の場合 ---
             if pd.isna(key) or key == 0:
-                # 【重要】名称が空の行は「追加しない」 (無限増殖の防止策)
+                # 名称が空の行は「追加しない」し、変更ともみなさない
                 if not row['名称'] or str(row['名称']).strip() == "":
                     continue
 
-                # 現在のフォルダ階層情報を付与して新規行作成
+                # ここまで来たら「本当に追加する」
                 new_row = row.copy()
                 new_row['大項目'] = sel_large if sel_large != "(すべて)" else ""
                 new_row['中項目'] = sel_mid if sel_mid != "(すべて)" else ""
                 new_row['小項目'] = sel_small if sel_small != "(すべて)" else ""
                 
-                # 新しいsort_keyの発行
                 max_key = st.session_state.df_main['sort_key'].max()
                 if pd.isna(max_key): max_key = 0
                 new_row['sort_key'] = max_key + 10
                 
-                # DataFrameに行追加
                 st.session_state.df_main = pd.concat([st.session_state.df_main, pd.DataFrame([new_row])], ignore_index=True)
+                data_changed = True
             
             # --- 既存行の場合 ---
             else:
@@ -193,10 +196,14 @@ if st.session_state.df_main is not None:
                 if not idxs.empty:
                     cols_to_upd = ['確認', '名称', '規格', '数量', '単位', 'NET', '原単価', '掛率', '売単価', '見積金額', '(自)荒利率', '備考', '部分項目']
                     valid_cols = [c for c in cols_to_upd if c in row.index and c in st.session_state.df_main.columns]
+                    
+                    # 値を書き込む
                     st.session_state.df_main.loc[idxs[0], valid_cols] = row[valid_cols].values
+                    data_changed = True
         
-        # 変更を反映して再描画
-        st.rerun()
+        # 【重要】実際にデータの書き換えが発生したときだけ再描画する
+        if data_changed:
+            st.rerun()
 
     # 5. アクションエリア (マスタ登録など)
     st.markdown("---")
