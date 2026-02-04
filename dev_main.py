@@ -131,24 +131,25 @@ if st.session_state.df_main is not None:
     cost_total = st.session_state.df_main['実行金額'].sum()
     profit = total_ex_tax - cost_total
 
-    # 金額表示 (CSSデザイン)
+# 金額表示 (CSSデザイン: レスポンシブ対応版)
+    # min-widthを調整して、150%拡大時でも崩れにくくする
     st.markdown(f"""
-    <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 20px;">
-        <div style="flex: 1; background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
-            <div style="color: #666; font-size: 0.8rem;">直接工事費</div>
-            <div style="font-weight: bold; font-size: 1.1rem;">¥{direct_cost:,.0f}</div>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
+        <div style="flex: 1; min-width: 120px; background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+            <div style="color: #666; font-size: 0.75rem;">直接工事費</div>
+            <div style="font-weight: bold; font-size: 1.0rem;">¥{direct_cost:,.0f}</div>
         </div>
-        <div style="flex: 1; background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
-            <div style="color: #666; font-size: 0.8rem;">諸経費 ({st.session_state.general_exp_rate}%)</div>
-            <div style="font-weight: bold; font-size: 1.1rem;">¥{gen_exp_amount:,.0f}</div>
+        <div style="flex: 1; min-width: 120px; background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+            <div style="color: #666; font-size: 0.75rem;">諸経費 ({st.session_state.general_exp_rate}%)</div>
+            <div style="font-weight: bold; font-size: 1.0rem;">¥{gen_exp_amount:,.0f}</div>
         </div>
-        <div style="flex: 1; background: #e3f2fd; padding: 10px; border: 1px solid #2196f3; border-radius: 6px;">
-            <div style="color: #1565c0; font-size: 0.8rem;">見積総額 (税抜)</div>
-            <div style="font-weight: bold; font-size: 1.3rem; color: #1565c0;">¥{total_ex_tax:,.0f}</div>
+        <div style="flex: 1; min-width: 140px; background: #e3f2fd; padding: 10px; border: 1px solid #2196f3; border-radius: 6px;">
+            <div style="color: #1565c0; font-size: 0.75rem;">見積総額 (税抜)</div>
+            <div style="font-weight: bold; font-size: 1.2rem; color: #1565c0;">¥{total_ex_tax:,.0f}</div>
         </div>
-        <div style="flex: 1; background: #e0f2f1; padding: 10px; border: 1px solid #009688; border-radius: 6px;">
-            <div style="color: #00695c; font-size: 0.8rem;">税込合計</div>
-            <div style="font-weight: bold; font-size: 1.4rem; color: #00695c;">¥{grand_total:,.0f}</div>
+        <div style="flex: 1; min-width: 140px; background: #e0f2f1; padding: 10px; border: 1px solid #009688; border-radius: 6px;">
+            <div style="color: #00695c; font-size: 0.75rem;">税込合計</div>
+            <div style="font-weight: bold; font-size: 1.3rem; color: #00695c;">¥{grand_total:,.0f}</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
