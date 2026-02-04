@@ -98,21 +98,23 @@ if st.session_state.df_main is not None:
     project_name = st.session_state.info_dict.get('工事名', '新規案件')
     st.subheader(f"案件: {project_name}")
     
-    # フィルタリング
-    df = st.session_state.df_main
+# フィルタリング
+    df = st.session_state.df_main.fillna("") # 空文字対策
     mask = [True] * len(df)
     
     current_path = []
-    if sel_large != "(すべて)":
+    
+    # ツリー選択結果でフィルタリング
+    if sel_large:
         mask = mask & (df['大項目'] == sel_large)
         current_path.append(sel_large)
-    if sel_mid != "(すべて)":
+    if sel_mid:
         mask = mask & (df['中項目'] == sel_mid)
         current_path.append(sel_mid)
-    if sel_small != "(すべて)":
+    if sel_small:
         mask = mask & (df['小項目'] == sel_small)
         current_path.append(sel_small)
-    if sel_part != "(すべて)":
+    if sel_part:
         mask = mask & (df['部分項目'] == sel_part)
         current_path.append(sel_part)
     
