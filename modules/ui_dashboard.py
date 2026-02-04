@@ -60,7 +60,8 @@ def render_playlist_editor(filtered_df):
         "荒利率": st.column_config.NumberColumn("率", format="%.1f%%", disabled=True),
         
         # 管理用列（必要に応じて表示/非表示を調整）
-        "sort_key": st.column_config.NumberColumn("SortID", disabled=True, format="%d"),
+        # ▼▼ 修正後: disabled=False (入力可能にする) ▼▼
+        "sort_key": st.column_config.NumberColumn("SortID", disabled=False, format="%d", help="並び順を変えるにはここを書き換えて保存してください"),
         "部分項目": st.column_config.TextColumn("部分項目")
     }
     
