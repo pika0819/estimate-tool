@@ -53,11 +53,24 @@ with st.sidebar:
                     df_est, info, url = load_project_db(secrets, input_url)
                     
                     if df_est is not None:
-                        # 初回計算 & sort_key初期化
-                        if 'sort_key' not in df_est.columns or df_est['sort_key'].isnull().all():
-                            # キーがなければ連番を振る
+                        if df_est is not None:
+                        # ---------------------------------------------------------
+                        # 【修正版】ロード時のID処理ロジック
+                        # ---------------------------------------------------------
+                        # 1. sort_key を強制的に数値化（空文字対策）
+                        if 'sort_key' in df_est.columns:
+                            # エラー(空文字など)はNaNになり、その後0に変換
+                            df_est['sort_key'] = pd.to_numeric(df_est['sort_key'], errors='coerce').fillna(0)
+                        else:
+                            df_est['sort_key'] = 0
+
+                        # 2. IDが0の行（新規または未設定）は、連番（100, 200...）を振る
+                        #    既存のIDがある行はそのまま、0の行だけ採番する
+                        #    (今回は簡単のため、全行0なら全行リナンバリングする)
+                        if (df_est['sort_key'] == 0).all():
                             df_est['sort_key'] = (df_est.index + 1) * 100
                         
+                        # 3. 計算実行
                         st.session_state.df_main = calculate_dataframe(df_est)
                         st.session_state.info_dict = info
                         st.session_state.project_url = url
