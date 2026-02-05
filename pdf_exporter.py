@@ -335,7 +335,6 @@ class EstimatePDFGenerator:
         self._draw_page_header(self.current_page, TITLE)
         self.current_y = self.y_start
 
-        # ★ 修正: data_tree という変数名で統一して辞書を作成する
         data_tree = {}
         seen_l1 = []
         seen_l2_by_l1 = {}
@@ -366,7 +365,7 @@ class EstimatePDFGenerator:
             self.current_y -= Style.ROW_HEIGHT
 
             l1_total = 0
-            l2_dict = data_tree[l1] # ★ここで正しい辞書変数を使う
+            l2_dict = data_tree[l1]
 
             for l2, items in l2_dict.items():
                 l2_total = sum(i['amt_val'] for i in items)
@@ -385,9 +384,11 @@ class EstimatePDFGenerator:
                 
                 for idx, item in enumerate(items):
                     l3 = item['l3']; l4 = item['l4']; amt = item['amt_val']
-                    l3_chg = (l3 and l3 != current_l3); l4_chg = (l4 and l4 != current_l4)
+                    # ★修正: 変数名を統一
+                    is_l3_change = (l3 and l3 != current_l3)
+                    is_l4_change = (l4 and l4 != current_l4)
                     
-                    if current_l4 and (l4_chg or l3_chg):
+                    if current_l4 and (is_l4_change or is_l3_change):
                         if self._check_space(1, TITLE): pass
                         self._draw_bold_string(self.col_x['name']+Style.INDENT_ITEM, self.current_y-5*mm, f"【{current_l4}】 小計", 9, colors.black)
                         self.c.setFont(self.font, 9); self.c.drawRightString(self.col_x['amt']+self.col_widths['amt']-2*mm, self.current_y-5*mm, f"{int(sub_l4):,}")
@@ -395,7 +396,7 @@ class EstimatePDFGenerator:
                         self.current_y -= Style.ROW_HEIGHT
                         sub_l4 = 0; current_l4 = ""
                     
-                    if current_l3 and l3_chg:
+                    if current_l3 and is_l3_change:
                         if self._check_space(1, TITLE): pass
                         self._draw_bold_string(self.col_x['name']+Style.INDENT_L3, self.current_y-5*mm, f"【{current_l3} 小計】", 9, Style.COLOR_L3)
                         self.c.setFont(self.font, 9); self.c.setFillColor(Style.COLOR_L3)
