@@ -7,15 +7,20 @@ from pdf_exporter import EstimatePDFGenerator
 def main():
     st.set_page_config(layout="wide", page_title="見積コントロールセンター")
 
-    # CSS設定
     st.markdown("""
     <style>
         .stApp { font-size: 1.1rem; }
         .metric-label { font-size: 1.2rem; font-weight: bold; color: #555; }
         .metric-value-lg { font-size: 2.2rem; font-weight: bold; color: #1f77b4; line-height: 1.2; }
         .metric-value-md { font-size: 1.5rem; font-weight: bold; color: #333; }
-        .total-box { padding: 15px; background-color: #f0f2f6; border-radius: 10px; margin-bottom: 20px; }
         div[data-testid="stSidebar"] { min-width: 350px; }
+        .overhead-box {
+            background-color: #fff3cd;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            border: 1px solid #ffeeba;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -23,10 +28,9 @@ def main():
     if 'df_main' not in st.session_state: st.session_state.df_main = None
     if 'info_dict' not in st.session_state: st.session_state.info_dict = {}
     if 'sheet_url' not in st.session_state: st.session_state.sheet_url = ""
+    # 諸経費率を保存する辞書 {sort_key: rate}
+    if 'overhead_rates_map' not in st.session_state: st.session_state.overhead_rates_map = {}
 
-    # ------------------
-    # Sidebar
-    # ------------------
     with st.sidebar:
         st.title("🛠️ 見積管理盤")
         
@@ -41,9 +45,11 @@ def main():
                             if 'sort_key' not in df.columns:
                                 df['sort_key'] = [str(uuid.uuid4()) for _ in range(len(df))]
                             
-                            st.session_state.df_main = calculate_dataframe(df)
                             st.session_state.info_dict = info
                             st.session_state.sheet_url = input_url
+                            
+                            # 初期計算（レートマップは空で開始、または前回値を保持する場合はロジック追加）
+                            st.session_state.df_main = calculate_dataframe(df, st.session_state.overhead_rates_map)
                             st.success("読み込み完了")
                             st.rerun()
                 except Exception as e:
@@ -52,26 +58,67 @@ def main():
         st.markdown("---")
 
         if st.session_state.df_main is not None:
-            df_cur = st.session_state.df_main
+            # ---------------------------
+            # ★ 諸経費設定エリア
+            # ---------------------------
+            st.subheader("💰 諸経費設定")
             
-            # 数値表示用計算
-            total_kouji = df_cur['見積金額'].sum()
-            total_cost = df_cur['実行金額'].sum()
-            overhead = total_kouji * 0.15
-            total_est = total_kouji + overhead
+            df_cur = st.session_state.df_main
+            # 大項目が「諸経費」の行を抽出
+            overhead_rows = df_cur[df_cur['大項目'] == '諸経費']
+            
+            if not overhead_rows.empty:
+                rates_updated = False
+                
+                for _, row in overhead_rows.iterrows():
+                    s_key = str(row['sort_key'])
+                    name = str(row['名称'])
+                    spec = str(row['規格'])
+                    
+                    # 既存のレートがあれば取得、なければ0
+                    current_rate = st.session_state.overhead_rates_map.get(s_key, 0.0)
+                    
+                    st.markdown(f"**{name}** <span style='font-size:0.8em; color:#666;'>({spec})</span>", unsafe_allow_html=True)
+                    new_rate = st.number_input(
+                        f"諸経費率 (%)",
+                        min_value=0.0, max_value=100.0, value=float(current_rate), step=0.5,
+                        key=f"rate_input_{s_key}"
+                    )
+                    
+                    if new_rate != current_rate:
+                        st.session_state.overhead_rates_map[s_key] = new_rate
+                        rates_updated = True
+                
+                if rates_updated:
+                    st.session_state.df_main = calculate_dataframe(df_cur, st.session_state.overhead_rates_map)
+                    st.rerun()
+                
+                # 合計対象額（諸経費以外の合計）を表示（確認用）
+                base_total = df_cur[df_cur['大項目'] != '諸経費']['見積金額'].sum()
+                st.caption(f"※ 計算対象の見積小計: ¥{base_total:,.0f}")
+                
+            else:
+                st.info("大項目が「諸経費」の行が見つかりません。")
+
+            st.markdown("---")
+
+            # ---------------------------
+            # 集計表示
+            # ---------------------------
+            total_est = df_cur['見積金額'].sum()
             tax = total_est * 0.1
             grand_total = total_est + tax
-            profit = total_kouji - total_cost
-            margin = (profit / total_kouji * 100) if total_kouji > 0 else 0
+            
+            # 粗利
+            total_cost = df_cur['実行金額'].sum()
+            profit = total_est - total_cost
+            margin = (profit / total_est * 100) if total_est > 0 else 0
 
-            st.markdown('<div class="metric-label">工事価格 (小計)</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="metric-value-md">¥{total_kouji:,.0f}</div>', unsafe_allow_html=True)
-            st.markdown('<div class="metric-label">諸経費 (15%)</div>', unsafe_allow_html=True)
-            st.info(f"¥{overhead:,.0f}")
             st.markdown('<div class="metric-label">見積総額 (税抜)</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="metric-value-lg">¥{total_est:,.0f}</div>', unsafe_allow_html=True)
             st.write(f"消費税(10%): ¥{tax:,.0f}")
             st.markdown(f"### 税込合計: ¥{grand_total:,.0f}")
+            
             st.markdown("---")
             st.metric("現場想定粗利", f"¥{profit:,.0f}", f"{margin:.1f}%")
             
@@ -81,6 +128,7 @@ def main():
             if st.button("💾 シートに保存・更新", type="primary", use_container_width=True):
                 secrets = dict(st.secrets["gcp_service_account"])
                 with st.spinner("Google Sheetsへ書き込み中..."):
+                    # 保存時はレートマップの内容で計算された最新のDataFrameを保存
                     if save_data(st.session_state.sheet_url, secrets, st.session_state.df_main):
                         st.success("保存しました！")
                     else:
@@ -105,9 +153,7 @@ def main():
                 fname = f"{params['date'].replace('/','')}_{params['client_name']}_{params['project_name']}.pdf"
                 st.download_button("📥 PDFをダウンロード", pdf_data, fname, "application/pdf", type="secondary")
 
-    # ------------------
-    # Main Editor
-    # ------------------
+    # --- Main Editor ---
     if st.session_state.df_main is not None:
         st.subheader(f"📋 見積明細: {st.session_state.info_dict.get('工事名', '未設定')}")
         
@@ -119,7 +165,7 @@ def main():
             "規格": st.column_config.TextColumn("規格", width="medium"),
             "数量": st.column_config.NumberColumn("数量", min_value=0, step=0.1, format="%.2f"),
             "単位": st.column_config.TextColumn("単位", width="small"),
-            "NET": st.column_config.NumberColumn("NET(参考)", format="¥%d", width="small", help="仕入れ値"),
+            "NET": st.column_config.NumberColumn("NET(参考)", format="¥%d", width="small"),
             "原単価": st.column_config.NumberColumn("原単価(当方)", format="¥%d", step=100, width="small"),
             "掛率": st.column_config.NumberColumn("掛率", min_value=0.0, max_value=2.0, step=0.01, format="%.2f", width="small"),
             "売単価": st.column_config.NumberColumn("売単価", format="¥%d", disabled=True),
@@ -147,8 +193,10 @@ def main():
             key="editor"
         )
 
+        # エディタで変更があった場合
         if not edited_df.equals(st.session_state.df_main[display_cols]):
-            recalc_df = calculate_dataframe(edited_df)
+            # 再計算（現在のレートマップを維持して適用）
+            recalc_df = calculate_dataframe(edited_df, st.session_state.overhead_rates_map)
             st.session_state.df_main = recalc_df
             st.rerun()
             
