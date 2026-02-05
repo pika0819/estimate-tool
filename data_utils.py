@@ -15,6 +15,7 @@ def parse_amount(val: Any) -> float:
     except (ValueError, TypeError):
         return 0.0
 
+# ★ここを修正しました（引数を追加）
 def calculate_dataframe(df: pd.DataFrame, overhead_rates: Dict[str, float] = None) -> pd.DataFrame:
     """
     データフレームの数値計算を行う。
@@ -29,27 +30,22 @@ def calculate_dataframe(df: pd.DataFrame, overhead_rates: Dict[str, float] = Non
         if col in df.columns:
             df[col] = df[col].apply(parse_amount)
     
-    # 2. 「諸経費」以外の通常項目の計算（ベースとなる合計を出すため）
-    # まず、諸経費行かどうかを判定するマスクを作成
+    # 2. 「諸経費」以外の通常項目の計算
     overhead_mask = df['大項目'] == '諸経費'
     
     # 通常行の計算
-    # 売単価 = 原単価 * 掛率
     df.loc[~overhead_mask, '売単価'] = (df.loc[~overhead_mask, '原単価'] * df.loc[~overhead_mask, '掛率']).astype(int)
-    # 見積金額 = 数量 * 売単価
     df.loc[~overhead_mask, '見積金額'] = (df.loc[~overhead_mask, '数量'] * df.loc[~overhead_mask, '売単価']).astype(int)
-    # 実行金額 = 数量 * 原単価
     df.loc[~overhead_mask, '実行金額'] = (df.loc[~overhead_mask, '数量'] * df.loc[~overhead_mask, '原単価']).astype(int)
 
     # 3. 諸経費の対象となる「工事価格」（諸経費以外の見積金額合計）を算出
     base_total = df.loc[~overhead_mask, '見積金額'].sum()
 
-    # 4. 諸経費行の計算（指定されたレートに基づいて書き込み）
-    # 行ごとにループして、辞書にレート設定があれば計算して適用
+    # 4. 諸経費行の計算
     for idx, row in df[overhead_mask].iterrows():
         key = str(row.get('sort_key', ''))
         
-        # 設定されたレートがあれば計算、なければ0%扱い（あるいは既存値を維持したい場合はロジック調整）
+        # 設定されたレートがあれば計算、なければ0%
         rate = overhead_rates.get(key, 0.0)
         
         # 計算: 原単価 = 対象額 * 率
@@ -60,13 +56,11 @@ def calculate_dataframe(df: pd.DataFrame, overhead_rates: Dict[str, float] = Non
         df.at[idx, '単位'] = '式'
         df.at[idx, '原単価'] = calc_price
         df.at[idx, '掛率'] = 1.0
-        
-        # 諸経費行も計算（掛率1.0なので 原単価=売単価 になる）
         df.at[idx, '売単価'] = int(calc_price * 1.0)
         df.at[idx, '見積金額'] = int(1 * calc_price * 1.0)
-        df.at[idx, '実行金額'] = int(1 * calc_price) # 原単価と同じ
+        df.at[idx, '実行金額'] = int(1 * calc_price)
 
-    # 5. 全体の粗利計算（再計算）
+    # 5. 粗利計算
     df['荒利金額'] = df['見積金額'] - df['実行金額']
     df['(自)荒利率'] = df.apply(
         lambda x: x['荒利金額'] / x['見積金額'] if x['見積金額'] != 0 else 0, axis=1
@@ -74,7 +68,6 @@ def calculate_dataframe(df: pd.DataFrame, overhead_rates: Dict[str, float] = Non
     
     return df
 
-# --- 以下、変更なし ---
 def get_gspread_client(secrets: Dict):
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     creds = ServiceAccountCredentials.from_json_keyfile_dict(secrets, scope)
