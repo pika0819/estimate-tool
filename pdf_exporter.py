@@ -276,12 +276,15 @@ class EstimatePDFGenerator:
             if l1 not in seen_l1:
                 seen_l1.append(l1)
                 seen_l2_by_l1[l1] = []
-            if l2 and l2 not in seen_l2_by_l1[l1]:
+            
+            # 修正: 中項目(l2)が空でもリストに追加して、後で処理できるようにする
+            if l2 not in seen_l2_by_l1[l1]:
                 seen_l2_by_l1[l1].append(l2)
+                
             if l1 not in breakdown: breakdown[l1] = {'items': {}, 'total': 0}
-            if l2:
-                if l2 not in breakdown[l1]['items']: breakdown[l1]['items'][l2] = 0
-                breakdown[l1]['items'][l2] += amt
+            # 空のキーも辞書に登録する
+            if l2 not in breakdown[l1]['items']: breakdown[l1]['items'][l2] = 0
+            breakdown[l1]['items'][l2] += amt
             breakdown[l1]['total'] += amt
 
         self._draw_page_header(p_num, "内 訳 明 細 書 (集計)")
@@ -306,12 +309,17 @@ class EstimatePDFGenerator:
             if spacer: y -= Style.ROW_HEIGHT
             self._draw_bold_string(self.col_x['name'] + Style.INDENT_L1, y-5*mm, f"■ {l1}", 10, Style.COLOR_L1)
             y -= Style.ROW_HEIGHT
+            
             for l2 in sorted_l2:
+                # 修正: 中項目がない場合は集計表でスキップ(L1計に含まれるため)
+                if not l2: continue 
+                
                 amt = data['items'][l2]
                 self._draw_bold_string(self.col_x['name'] + Style.INDENT_L2, y-5*mm, f"● {l2}", 10, Style.COLOR_L2)
                 self.c.setFont(self.font, 10); self.c.setFillColor(Style.COLOR_L2)
                 self.c.drawRightString(self.col_x['amt'] + self.col_widths['amt'] - 2*mm, y-5*mm, f"{int(amt):,}")
                 y -= Style.ROW_HEIGHT
+                
             self._draw_bold_string(self.col_x['name'] + Style.INDENT_L1, y-5*mm, f"【{l1} 計】", 10, Style.COLOR_L1)
             self.c.setFont(self.font, 10); self.c.setFillColor(Style.COLOR_L1)
             self.c.drawRightString(self.col_x['amt'] + self.col_widths['amt'] - 2*mm, y-5*mm, f"{int(data['total']):,}")
@@ -331,7 +339,10 @@ class EstimatePDFGenerator:
             if not l1: continue
             if l1 not in seen_l1:
                 seen_l1.append(l1); seen_l2_by_l1[l1] = []
-            if l2 and l2 not in seen_l2_by_l1[l1]: seen_l2_by_l1[l1].append(l2)
+            
+            # 修正: 中項目(l2)が空でもリストに追加
+            if l2 not in seen_l2_by_l1[l1]: seen_l2_by_l1[l1].append(l2)
+            
             if l1 not in data_tree: data_tree[l1] = {}
             if l2 not in data_tree[l1]: data_tree[l1][l2] = []
             item = row.copy()
@@ -373,7 +384,11 @@ class EstimatePDFGenerator:
                 items = l2_dict[l2]
                 l2_total = sum([i['amt_val'] for i in items])
                 rows_to_draw = []
-                rows_to_draw.append({'type': 'header_l2', 'label': f"● {l2}"})
+                
+                # 修正: 中項目(l2)がある場合のみヘッダー追加
+                if l2:
+                    rows_to_draw.append({'type': 'header_l2', 'label': f"● {l2}"})
+                
                 curr_l3 = ""; curr_l4 = ""; sub_l3 = 0; sub_l4 = 0
                 item_rows = []
                 for itm in items:
@@ -394,7 +409,11 @@ class EstimatePDFGenerator:
                 if curr_l4: item_rows.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4})
                 if curr_l3: item_rows.append({'type': 'footer_l3', 'label': f"【{curr_l3} 小計】", 'amt': sub_l3})
                 rows_to_draw.extend(item_rows)
-                rows_to_draw.append({'type': 'footer_l2', 'label': f"【{l2} 計】", 'amt': l2_total})
+                
+                # 修正: 中項目(l2)がある場合のみフッター追加
+                if l2:
+                    rows_to_draw.append({'type': 'footer_l2', 'label': f"【{l2} 計】", 'amt': l2_total})
+                
                 is_last_l2 = (i_l2 == len(sorted_l2) - 1)
                 if is_last_l2:
                     rows_to_draw.append({'type': 'footer_l1', 'label': f"【{l1} 計】", 'amt': l1_total})
@@ -413,9 +432,13 @@ class EstimatePDFGenerator:
                         y = self.y_start
                         self._draw_bold_string(self.col_x['name']+Style.INDENT_L1, y-5*mm, f"■ {l1} (続き)", 10, Style.COLOR_L1)
                         y -= Style.ROW_HEIGHT
+                        
+                        # 修正: 改ページ時も中項目(l2)がある場合のみヘッダー再表示
                         if l2_started and itype != 'footer_l1':
-                            self._draw_bold_string(self.col_x['name']+Style.INDENT_L2, y-5*mm, f"● {l2} (続き)", 10, Style.COLOR_L2)
-                            y -= Style.ROW_HEIGHT
+                            # l2が空でない場合のみ表示
+                            if l2:
+                                self._draw_bold_string(self.col_x['name']+Style.INDENT_L2, y-5*mm, f"● {l2} (続き)", 10, Style.COLOR_L2)
+                                y -= Style.ROW_HEIGHT
                         if cur_l3_lbl:
                             self._draw_bold_string(self.col_x['name']+Style.INDENT_L3, y-5*mm, f"{cur_l3_lbl} (続き)", 10, Style.COLOR_L3)
                             y -= Style.ROW_HEIGHT
