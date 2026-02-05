@@ -76,7 +76,7 @@ def load_data(sheet_url: str, secrets: Dict) -> Tuple[Optional[pd.DataFrame], Op
         print(f"Error: {e}")
         return None, None
 
-# --- ★ここからが新しいsave_data ---
+# ... (他の関数はそのまま) ...
 
 def _col_index_to_letter(n: int) -> str:
     """0始まりのインデックスをA, B, C... AA形式に変換"""
@@ -88,34 +88,27 @@ def _col_index_to_letter(n: int) -> str:
     return string
 
 def save_data(sheet_url: str, secrets: Dict, df: pd.DataFrame) -> bool:
-    """
-    データを保存する際、計算列（売単価など）には値を書き込まず、
-    スプレッドシート用の数式（Formula）を書き込む。
-    """
     try:
         client = get_gspread_client(secrets)
         wb = client.open_by_url(sheet_url)
         sheet = wb.worksheet(SHEET_NAME)
         
-        save_df = df.copy()
+        # 保存用にコピー＆NaNを空文字に変換（エラー防止）
+        save_df = df.copy().fillna('')
         
         # Boolean変換
         if '確認' in save_df.columns:
-            save_df['確認'] = save_df['確認'].apply(lambda x: 'TRUE' if x else 'FALSE')
+            save_df['確認'] = save_df['確認'].apply(lambda x: 'TRUE' if x is True else 'FALSE')
         
-        # --- 数式化のロジック ---
-        # 列名と列番号(A,B,C...)のマッピングを作成
+        # --- 数式化ロジック ---
         cols = save_df.columns.tolist()
         col_map = {name: _col_index_to_letter(i) for i, name in enumerate(cols)}
         
-        # 必要な列が存在するかチェック
         req_cols = ['数量', '原単価', '掛率', '売単価', '見積金額', '実行金額', '荒利金額', '(自)荒利率']
         if all(c in col_map for c in req_cols):
-            # 行ごとにループして数式を埋め込む（データは2行目から始まるため、行番号は idx + 2）
             for idx in range(len(save_df)):
                 row_num = idx + 2
                 
-                # 列記号を取得
                 c_qty = col_map['数量']
                 c_cost = col_map['原単価']
                 c_rate = col_map['掛率']
@@ -124,28 +117,24 @@ def save_data(sheet_url: str, secrets: Dict, df: pd.DataFrame) -> bool:
                 c_exec_amt = col_map['実行金額']
                 c_profit_amt = col_map['荒利金額']
                 
-                # 数式をセット (INT関数で丸め処理も再現)
-                # 売単価 = 原単価 * 掛率
+                # 数式セット
                 save_df.at[idx, '売単価'] = f'=INT({c_cost}{row_num} * {c_rate}{row_num})'
-                
-                # 実行金額 = 数量 * 原単価
                 save_df.at[idx, '実行金額'] = f'=INT({c_qty}{row_num} * {c_cost}{row_num})'
-                
-                # 見積金額 = 数量 * 売単価 (※ここで先程の売単価セルを参照)
                 save_df.at[idx, '見積金額'] = f'=INT({c_qty}{row_num} * {c_sell}{row_num})'
-                
-                # 荒利金額 = 見積金額 - 実行金額
                 save_df.at[idx, '荒利金額'] = f'={c_est_amt}{row_num} - {c_exec_amt}{row_num}'
-                
-                # 荒利率 = IFERROR(荒利 / 見積, 0)
                 save_df.at[idx, '(自)荒利率'] = f'=IFERROR({c_profit_amt}{row_num} / {c_est_amt}{row_num}, 0)'
 
-        # 書き込み用データ作成
         data_to_write = [save_df.columns.values.tolist()] + save_df.values.tolist()
         
         sheet.clear()
-        # raw=False (default) なので、'=' で始まる文字列は自動的に数式として認識される
-        sheet.update(range_name='A1', values=data_to_write)
+        
+        # ★ここが修正ポイント: value_input_option='USER_ENTERED' を追加
+        sheet.update(
+            range_name='A1', 
+            values=data_to_write, 
+            value_input_option='USER_ENTERED'
+        )
+        
         return True
     except Exception as e:
         print(f"Save Error: {e}")
