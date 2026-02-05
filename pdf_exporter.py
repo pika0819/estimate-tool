@@ -153,7 +153,6 @@ class EstimatePDFGenerator:
         self.c.restoreState()
 
     def _draw_total_block(self, page_title):
-        # 諸経費がない場合などのための汎用合計ブロック描画関数
         self._check_space(4, page_title) 
         y = self.current_y
         labels = [("見積総額 (税抜)", self.total_estimated), ("消費税 (10%)", self.tax_amount), ("総合計 (税込)", self.final_total)]
@@ -276,7 +275,6 @@ class EstimatePDFGenerator:
             self.c.setLineWidth(0.5); self.c.setStrokeColor(colors.black); self.c.line(Style.X_BASE, self.current_y-Style.ROW_HEIGHT, self.right_edge, self.current_y-Style.ROW_HEIGHT)
             self.current_y -= Style.ROW_HEIGHT
 
-        # 総括表でも最後に合計を出す
         self._draw_total_block(TITLE)
         self._draw_grid_frame()
         self.c.showPage()
@@ -331,13 +329,14 @@ class EstimatePDFGenerator:
         self._draw_grid_frame()
         self.c.showPage()
 
-    def draw_detail_pages(self, p_num):
+    def draw_detail_pages(self):
         TITLE = "内 訳 明 細 書 (詳細)"
         self.current_page += 1
         self._draw_page_header(self.current_page, TITLE)
         self.current_y = self.y_start
 
-        tree = {}
+        # ★ 修正: data_tree という変数名で統一して辞書を作成する
+        data_tree = {}
         seen_l1 = []
         seen_l2_by_l1 = {}
         for row in self.df.to_dict('records'):
@@ -358,7 +357,7 @@ class EstimatePDFGenerator:
             })
             if item.get('名称'): data_tree[l1][l2].append(item)
 
-        total_block_drawn_in_overhead = False # 諸経費ページで合計を描画したかフラグ
+        total_block_drawn_in_overhead = False
 
         for l1 in seen_l1:
             if self._check_space(2, TITLE): pass
@@ -367,6 +366,7 @@ class EstimatePDFGenerator:
             self.current_y -= Style.ROW_HEIGHT
 
             l1_total = 0
+            l2_dict = data_tree[l1] # ★ここで正しい辞書変数を使う
 
             for l2, items in l2_dict.items():
                 l2_total = sum(i['amt_val'] for i in items)
@@ -385,25 +385,25 @@ class EstimatePDFGenerator:
                 
                 for idx, item in enumerate(items):
                     l3 = item['l3']; l4 = item['l4']; amt = item['amt_val']
-                    l3_chg = (l3 and l3 != current_l3); l4_chg = (l4 and l4 != curr_l4)
-                    if curr_l4 and (l4_chg or l3_chg):
-                        item_rows = [{'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4}]
-                        # Draw helper omitted for brevity, inline logic mostly
-                        self._draw_bold_string(self.col_x['name']+Style.INDENT_ITEM, self.current_y-5*mm, f"【{curr_l4}】 小計", 9, colors.black)
+                    l3_chg = (l3 and l3 != current_l3); l4_chg = (l4 and l4 != current_l4)
+                    
+                    if current_l4 and (l4_chg or l3_chg):
+                        if self._check_space(1, TITLE): pass
+                        self._draw_bold_string(self.col_x['name']+Style.INDENT_ITEM, self.current_y-5*mm, f"【{current_l4}】 小計", 9, colors.black)
                         self.c.setFont(self.font, 9); self.c.drawRightString(self.col_x['amt']+self.col_widths['amt']-2*mm, self.current_y-5*mm, f"{int(sub_l4):,}")
                         self.c.setLineWidth(0.5); self.c.setStrokeColor(colors.grey); self.c.line(Style.X_BASE, self.current_y-Style.ROW_HEIGHT, self.right_edge, self.current_y-Style.ROW_HEIGHT)
                         self.current_y -= Style.ROW_HEIGHT
-                        sub_l4 = 0; curr_l4 = ""
+                        sub_l4 = 0; current_l4 = ""
                     
-                    if curr_l3 and l3_chg:
-                        self._draw_bold_string(self.col_x['name']+Style.INDENT_L3, self.current_y-5*mm, f"【{curr_l3} 小計】", 9, Style.COLOR_L3)
+                    if current_l3 and l3_chg:
+                        if self._check_space(1, TITLE): pass
+                        self._draw_bold_string(self.col_x['name']+Style.INDENT_L3, self.current_y-5*mm, f"【{current_l3} 小計】", 9, Style.COLOR_L3)
                         self.c.setFont(self.font, 9); self.c.setFillColor(Style.COLOR_L3)
                         self.c.drawRightString(self.col_x['amt']+self.col_widths['amt']-2*mm, self.current_y-5*mm, f"{int(sub_l3):,}")
                         self.c.setLineWidth(0.5); self.c.setStrokeColor(colors.grey); self.c.line(Style.X_BASE, self.current_y-Style.ROW_HEIGHT, self.right_edge, self.current_y-Style.ROW_HEIGHT)
                         self.current_y -= Style.ROW_HEIGHT
-                        sub_l3 = 0; curr_l3 = ""
+                        sub_l3 = 0; current_l3 = ""
 
-                    # Headers & Check Space
                     rows_needed_for_start = 1
                     if is_l3_change and l3: rows_needed_for_start += 1
                     if is_l4_change and l4: rows_needed_for_start += 1
@@ -414,23 +414,22 @@ class EstimatePDFGenerator:
                         if l2:
                             self._draw_bold_string(self.col_x['name']+Style.INDENT_L2, self.current_y-5*mm, f"● {l2} (続き)", 10, Style.COLOR_L2)
                             self.current_y -= Style.ROW_HEIGHT
-                        if not is_l3_change and curr_l3:
-                             self._draw_bold_string(self.col_x['name']+Style.INDENT_L3, self.current_y-5*mm, f"・ {curr_l3} (続き)", 10, Style.COLOR_L3)
+                        if not is_l3_change and current_l3:
+                             self._draw_bold_string(self.col_x['name']+Style.INDENT_L3, self.current_y-5*mm, f"・ {current_l3} (続き)", 10, Style.COLOR_L3)
                              self.current_y -= Style.ROW_HEIGHT
 
                     if is_l3_change and l3:
                         self._draw_bold_string(self.col_x['name']+Style.INDENT_L3, self.current_y-5*mm, f"・ {l3}", 10, Style.COLOR_L3)
                         self.c.setLineWidth(0.5); self.c.setStrokeColor(colors.grey); self.c.line(Style.X_BASE, self.current_y-Style.ROW_HEIGHT, self.right_edge, self.current_y-Style.ROW_HEIGHT)
                         self.current_y -= Style.ROW_HEIGHT
-                        curr_l3 = l3
+                        current_l3 = l3
                     
                     if is_l4_change and l4:
                         self._draw_bold_string(self.col_x['name']+Style.INDENT_ITEM, self.current_y-5*mm, f"【{l4}】", 9, colors.black)
                         self.c.setLineWidth(0.5); self.c.setStrokeColor(colors.grey); self.c.line(Style.X_BASE, self.current_y-Style.ROW_HEIGHT, self.right_edge, self.current_y-Style.ROW_HEIGHT)
                         self.current_y -= Style.ROW_HEIGHT
-                        curr_l4 = l4
+                        current_l4 = l4
 
-                    # Item
                     self.c.setFont(self.font, 9); self.c.setFillColor(colors.black)
                     self.c.drawString(self.col_x['name']+Style.INDENT_ITEM, self.current_y-5*mm, item.get('名称',''))
                     self.c.setFont(self.font, 8)
@@ -441,20 +440,21 @@ class EstimatePDFGenerator:
                     if item['price_val']: self.c.drawRightString(self.col_x['price']+self.col_widths['price']-2*mm, self.current_y-5*mm, f"{int(item['price_val']):,}")
                     if item['amt_val']: self.c.drawRightString(self.col_x['amt']+self.col_widths['amt']-2*mm, self.current_y-5*mm, f"{int(item['amt_val']):,}")
                     self.c.setFont(self.font, 8); self.c.drawString(self.col_x['rem']+1*mm, self.current_y-5*mm, item.get('備考',''))
-                    
                     self.c.setLineWidth(0.5); self.c.setStrokeColor(colors.grey); self.c.line(Style.X_BASE, self.current_y-Style.ROW_HEIGHT, self.right_edge, self.current_y-Style.ROW_HEIGHT)
                     self.current_y -= Style.ROW_HEIGHT
                     
                     sub_l3 += amt; sub_l4 += amt
 
-                if curr_l4:
-                    self._draw_bold_string(self.col_x['name']+Style.INDENT_ITEM, self.current_y-5*mm, f"【{curr_l4}】 小計", 9, colors.black)
+                if current_l4:
+                    if self._check_space(1, TITLE): pass
+                    self._draw_bold_string(self.col_x['name']+Style.INDENT_ITEM, self.current_y-5*mm, f"【{current_l4}】 小計", 9, colors.black)
                     self.c.setFont(self.font, 9); self.c.drawRightString(self.col_x['amt']+self.col_widths['amt']-2*mm, self.current_y-5*mm, f"{int(sub_l4):,}")
                     self.c.setLineWidth(0.5); self.c.setStrokeColor(colors.grey); self.c.line(Style.X_BASE, self.current_y-Style.ROW_HEIGHT, self.right_edge, self.current_y-Style.ROW_HEIGHT)
                     self.current_y -= Style.ROW_HEIGHT
                 
-                if curr_l3:
-                    self._draw_bold_string(self.col_x['name']+Style.INDENT_L3, self.current_y-5*mm, f"【{curr_l3} 小計】", 9, Style.COLOR_L3)
+                if current_l3:
+                    if self._check_space(1, TITLE): pass
+                    self._draw_bold_string(self.col_x['name']+Style.INDENT_L3, self.current_y-5*mm, f"【{current_l3} 小計】", 9, Style.COLOR_L3)
                     self.c.setFont(self.font, 9); self.c.setFillColor(Style.COLOR_L3)
                     self.c.drawRightString(self.col_x['amt']+self.col_widths['amt']-2*mm, self.current_y-5*mm, f"{int(sub_l3):,}")
                     self.c.setLineWidth(0.5); self.c.setStrokeColor(colors.grey); self.c.line(Style.X_BASE, self.current_y-Style.ROW_HEIGHT, self.right_edge, self.current_y-Style.ROW_HEIGHT)
@@ -468,27 +468,19 @@ class EstimatePDFGenerator:
                     self.c.setLineWidth(1.0); self.c.setStrokeColor(Style.COLOR_L2); self.c.line(Style.X_BASE, self.current_y-Style.ROW_HEIGHT, self.right_edge, self.current_y-Style.ROW_HEIGHT)
                     self.current_y -= Style.ROW_HEIGHT
 
-            # --- ★諸経費の場合の例外処理 ---
             if l1 == "諸経費":
-                # 1. 10行目までジャンプ (現在のYがそれより上にある場合のみ)
-                # 10行目 = start - 10*h
                 target_sub_y = self.y_start - (10 * Style.ROW_HEIGHT)
-                if self.current_y > target_sub_y:
-                    self.current_y = target_sub_y
+                if self.current_y > target_sub_y: self.current_y = target_sub_y
                 
-                # 2. 諸経費計を描画
                 self._draw_bold_string(self.col_x['name']+Style.INDENT_L1, self.current_y-5*mm, f"【{l1} 計】", 10, Style.COLOR_L1)
                 self.c.setFont(self.font, 10); self.c.setFillColor(Style.COLOR_L1)
                 self.c.drawRightString(self.col_x['amt']+self.col_widths['amt']-2*mm, self.current_y-5*mm, f"{int(l1_total):,}")
                 self.c.setLineWidth(1.0); self.c.setStrokeColor(Style.COLOR_L1); self.c.line(Style.X_BASE, self.current_y-Style.ROW_HEIGHT, self.right_edge, self.current_y-Style.ROW_HEIGHT)
                 self.current_y -= Style.ROW_HEIGHT
 
-                # 3. ページ下部（ラスト3行）へジャンプ
                 target_bottom_y = Style.MARGIN_BOTTOM + (3 * Style.ROW_HEIGHT)
-                if self.current_y > target_bottom_y:
-                    self.current_y = target_bottom_y
+                if self.current_y > target_bottom_y: self.current_y = target_bottom_y
                 
-                # 4. 合計ブロック描画 (手動配置で綺麗に)
                 labels = [("見積総額 (税抜)", self.total_estimated), ("消費税 (10%)", self.tax_amount), ("総合計 (税込)", self.final_total)]
                 for lbl, val in labels:
                     self._draw_bold_string(self.col_x['name'] + 20*mm, self.current_y-5*mm, f"【 {lbl} 】", 11, Style.COLOR_TOTAL)
@@ -500,7 +492,6 @@ class EstimatePDFGenerator:
                 total_block_drawn_in_overhead = True
 
             else:
-                # 通常のL1計
                 if self._check_space(1, TITLE): pass
                 self._draw_bold_string(self.col_x['name']+Style.INDENT_L1, self.current_y-5*mm, f"【{l1} 計】", 10, Style.COLOR_L1)
                 self.c.setFont(self.font, 10); self.c.setFillColor(Style.COLOR_L1)
@@ -510,7 +501,6 @@ class EstimatePDFGenerator:
             
             self.current_y -= 2*mm
 
-        # もし「諸経費」がなくて合計ブロックが描画されていない場合のフォールバック
         if not total_block_drawn_in_overhead:
             self._draw_total_block(TITLE)
         
@@ -522,7 +512,7 @@ class EstimatePDFGenerator:
         self.draw_summary()
         self.draw_grand_summary_table()
         self.draw_breakdown_table()
-        self.draw_detail_pages(1)
+        self.draw_detail_pages()
         
         self.c.save()
         self.buffer.seek(0)
