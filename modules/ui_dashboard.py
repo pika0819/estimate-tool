@@ -149,7 +149,7 @@ def render_playlist_editor(filtered_df):
         "見積金額": st.column_config.TextColumn("見積金額", width="medium"),
         
         "備考": st.column_config.TextColumn("備考", width="small"),
-        "(自)荒利率": st.column_config.NumberColumn("率", format="%.1f%%", disabled=True),
+        "荒利率": st.column_config.NumberColumn("率", format="%.1f%%", disabled=True),
         "部分項目": st.column_config.TextColumn("部分項目", disabled=True) 
     }
     
