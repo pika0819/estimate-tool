@@ -35,7 +35,7 @@ def calculate_dataframe(df):
     df['実行金額'] = (df['数量'] * df['原単価']).astype(int)
     df['荒利金額'] = df['見積金額'] - df['実行金額']
     
-    df['(自)荒利率'] = df.apply(
+    df['荒利率'] = df.apply(
         lambda x: x['荒利金額'] / x['見積金額'] if x['見積金額'] != 0 else 0.0, 
         axis=1
     )
