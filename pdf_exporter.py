@@ -191,7 +191,7 @@ class EstimatePDFGenerator:
         self.c.setLineWidth(1); self.c.line(self.width/2 - 60*mm, self.height - 32*mm, self.width/2 + 60*mm, self.height - 32*mm)
         self.c.setLineWidth(0.5); self.c.line(self.width/2 - 60*mm, self.height - 33*mm, self.width/2 + 60*mm, self.height - 33*mm)
         self.c.setFont(self.font, 20)
-        self.c.drawString(40*mm, self.height - 50*mm, f"{self.params['client_name']}  様")
+        self.c.drawString(40*mm, self.height - 50*mm, f"{self.params['client_name']} ")
         self.c.setFont(self.font, 12)
         self.c.drawString(40*mm, self.height - 60*mm, "下記のとおり御見積申し上げます")
         box_top = self.height - 65*mm
