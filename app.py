@@ -170,14 +170,14 @@ def main():
             "掛率": st.column_config.NumberColumn("掛率", min_value=0.0, max_value=2.0, step=0.01, format="%.2f", width="small"),
             "売単価": st.column_config.NumberColumn("売単価", format="¥%d", disabled=True),
             "見積金額": st.column_config.NumberColumn("見積金額", format="¥%d", disabled=True),
-            "(自)荒利率": st.column_config.NumberColumn("粗利率", format="%.1f%%", disabled=True),
+            "荒利率": st.column_config.NumberColumn("粗利率", format="%.1f%%", disabled=True),
             "備考": st.column_config.TextColumn("備考", width="medium"),
             "sort_key": st.column_config.TextColumn("ID", disabled=True, width="small")
         }
 
         display_cols = [
             '確認', '大項目', '中項目', '名称', '規格', '数量', '単位',
-            'NET', '原単価', '掛率', '売単価', '見積金額', '(自)荒利率', '備考', 'sort_key'
+            'NET', '原単価', '掛率', '売単価', '見積金額', '荒利率', '備考', 'sort_key'
         ]
         
         for c in display_cols:
@@ -205,3 +205,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
