@@ -57,15 +57,21 @@ def get_gspread_client(secrets: Dict):
     creds = ServiceAccountCredentials.from_json_keyfile_dict(secrets, scope)
     return gspread.authorize(creds)
 
+# --- load_data 関数の修正部分 ---
 def load_data(sheet_url: str, secrets: Dict) -> Tuple[Optional[pd.DataFrame], Optional[Dict]]:
-    # (変更なし)
     try:
         client = get_gspread_client(secrets)
         wb = client.open_by_url(sheet_url)
         sheet = wb.worksheet(SHEET_NAME)
         data = sheet.get_all_values()
-        if len(data) < 2: return None, None
-        df = pd.DataFrame(data[1:], columns=data[0])
+        
+        # Step 1: データ存在チェック（4行目以降のデータがない場合のエッジケース対応）
+        if len(data) < 4: 
+            return pd.DataFrame(columns=data[0]) if len(data) > 0 else None, None
+            
+        # Step 2: 読込範囲の変更（1行目をカラム名、4行目以降をデータとする）
+        df = pd.DataFrame(data[3:], columns=data[0])
+        
         info_sheet = wb.worksheet(INFO_SHEET_NAME)
         info_data = info_sheet.get_all_values()
         info_dict = {str(row[0]).strip(): str(row[1]).strip() for row in info_data if len(row) >= 2}
@@ -76,38 +82,27 @@ def load_data(sheet_url: str, secrets: Dict) -> Tuple[Optional[pd.DataFrame], Op
         print(f"Error: {e}")
         return None, None
 
-# ... (他の関数はそのまま) ...
 
-def _col_index_to_letter(n: int) -> str:
-    """0始まりのインデックスをA, B, C... AA形式に変換"""
-    string = ""
-    n += 1 
-    while n > 0:
-        n, remainder = divmod(n - 1, 26)
-        string = chr(65 + remainder) + string
-    return string
-
+# --- save_data 関数の修正部分 ---
 def save_data(sheet_url: str, secrets: Dict, df: pd.DataFrame) -> bool:
     try:
         client = get_gspread_client(secrets)
         wb = client.open_by_url(sheet_url)
         sheet = wb.worksheet(SHEET_NAME)
         
-        # 保存用にコピー＆NaNを空文字に変換（エラー防止）
         save_df = df.copy().fillna('')
         
-        # Boolean変換
         if '確認' in save_df.columns:
             save_df['確認'] = save_df['確認'].apply(lambda x: 'TRUE' if x is True else 'FALSE')
         
-        # --- 数式化ロジック ---
         cols = save_df.columns.tolist()
         col_map = {name: _col_index_to_letter(i) for i, name in enumerate(cols)}
         
-        req_cols = ['数量', '原単価', '掛率', '売単価', '見積金額', '実行金額', '荒利金額', '(自)荒利率']
+        req_cols = ['数量', '原単価', '掛率', '売単価', '見積金額', '実行金額', '荒利金額', '荒利率']
         if all(c in col_map for c in req_cols):
             for idx in range(len(save_df)):
-                row_num = idx + 2
+                # Step 3: 行番号のオフセットを修正（4行目から開始）
+                row_num = idx + 4 
                 
                 c_qty = col_map['数量']
                 c_cost = col_map['原単価']
@@ -117,23 +112,25 @@ def save_data(sheet_url: str, secrets: Dict, df: pd.DataFrame) -> bool:
                 c_exec_amt = col_map['実行金額']
                 c_profit_amt = col_map['荒利金額']
                 
-                # 数式セット
                 save_df.at[idx, '売単価'] = f'=INT({c_cost}{row_num} * {c_rate}{row_num})'
                 save_df.at[idx, '実行金額'] = f'=INT({c_qty}{row_num} * {c_cost}{row_num})'
                 save_df.at[idx, '見積金額'] = f'=INT({c_qty}{row_num} * {c_sell}{row_num})'
                 save_df.at[idx, '荒利金額'] = f'={c_est_amt}{row_num} - {c_exec_amt}{row_num}'
-                save_df.at[idx, '(自)荒利率'] = f'=IFERROR({c_profit_amt}{row_num} / {c_est_amt}{row_num}, 0)'
+                save_df.at[idx, '荒利率'] = f'=IFERROR({c_profit_amt}{row_num} / {c_est_amt}{row_num}, 0)'
 
-        data_to_write = [save_df.columns.values.tolist()] + save_df.values.tolist()
+        # 注意: ここではヘッダー行を含めず、データ値のみをリスト化する
+        data_to_write = save_df.values.tolist()
         
-        sheet.clear()
+        # Step 4: 2,3行目の関数を保護するため、シート全体クリアを廃止。4行目以降のみをクリア
+        sheet.batch_clear(['A4:ZZ']) 
         
-        # ★ここが修正ポイント: value_input_option='USER_ENTERED' を追加
-        sheet.update(
-            range_name='A1', 
-            values=data_to_write, 
-            value_input_option='USER_ENTERED'
-        )
+        # Step 5: A4セルを起点にデータを上書き
+        if data_to_write:
+            sheet.update(
+                range_name='A4', 
+                values=data_to_write, 
+                value_input_option='USER_ENTERED'
+            )
         
         return True
     except Exception as e:
