@@ -180,14 +180,18 @@ def main():
             'NET', '原単価', '掛率', '売単価', '見積金額', '荒利率', '備考', 'sort_key'
         ]
         
-# 既存の for c in display_cols: のループ部分を丸ごと以下に変更します
-
-        # Step 2: UI描画対象カラムの完全性担保 #
+        # 既存の for c in display_cols: のループ部分を丸ごと以下に変更します
+        
+        # if st.session_state.df_main is not None: の中
+        display_cols = [...] # 既存のリスト
+        
+        # --- 既存のループを以下に置き換え ---
+        # Step 2: 描画対象カラムの存在チェックと型保証
         for c in display_cols:
             if c not in st.session_state.df_main.columns:
                 st.session_state.df_main[c] = ""
             
-            # TextColumnで表示する列は、確実に文字列型(str)であることを保証する
+            # TextColumnでエラーが出ないよう、特定の列をstr型に強制する
             if c in ['大項目', '中項目', '名称', '規格', '単位', '備考', 'sort_key']:
                 st.session_state.df_main[c] = st.session_state.df_main[c].astype(str)
 
