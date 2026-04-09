@@ -71,6 +71,15 @@ def load_data(sheet_url: str, secrets: Dict) -> Tuple[Optional[pd.DataFrame], Op
             
         # Step 2: 読込範囲の変更（1行目をカラム名、4行目以降をデータとする）
         df = pd.DataFrame(data[3:], columns=data[0])
+
+        # df = pd.DataFrame(data[3:], columns=data[0])
+        # ↑既存のこの行の直下に、以下を追加します
+
+        # Step 1: 文字列カラムのNaN排除と型固定 #
+        text_cols = ['大項目', '中項目', '名称', '規格', '単位', '備考', 'sort_key']
+        for col in text_cols:
+            if col in df.columns:
+                df[col] = df[col].fillna('').astype(str)
         
         info_sheet = wb.worksheet(INFO_SHEET_NAME)
         info_data = info_sheet.get_all_values()
