@@ -87,13 +87,13 @@ def main():
     if st.session_state.df_main is not None:
         display_cols = ['確認', '大項目', '中項目', '名称', '規格', '数量', '単位', 'NET', '原単価', '掛率', '売単価', '見積金額', '荒利率', '備考', 'sort_key']
         
-    # app.py 内の st.data_editor の直前
-    for c in display_cols:
-        if c not in st.session_state.df_main.columns:
-            st.session_state.df_main[c] = ""
-        # 数値(NaN)が混じっていたら、ここで強制的に文字列("")に変換する
-        if c in ['大項目', '中項目', '名称', '規格', '単位', '備考', 'sort_key']:
-            st.session_state.df_main[c] = st.session_state.df_main[c].fillna('').astype(str)
+        # app.py 内の st.data_editor の直前
+        for c in display_cols:
+            if c not in st.session_state.df_main.columns:
+                st.session_state.df_main[c] = ""
+            # 数値(NaN)が混じっていたら、ここで強制的に文字列("")に変換する
+            if c in ['大項目', '中項目', '名称', '規格', '単位', '備考', 'sort_key']:
+                st.session_state.df_main[c] = st.session_state.df_main[c].fillna('').astype(str)
 
         edited_df = st.data_editor(
             st.session_state.df_main[display_cols],
