@@ -7,13 +7,9 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib import colors
-from data_utils import parse_amount # 金額変換用に関数をインポート
+from data_utils import parse_amount
 
-# PDF用設定
-FONT_FILE = "NotoSerifJP-Regular.ttf" # ※同じディレクトリにフォントファイルを配置してください
-FONT_NAME = "NotoSerifJP"
-FONT_NAME_FALLBACK = "Helvetica"
-
+# Step 1: PDF描画用スタイル定義 #
 class Style:
     COLOR_L1 = colors.HexColor('#0D5940')
     COLOR_L2 = colors.HexColor('#1A2673')
@@ -31,9 +27,11 @@ class Style:
     INDENT_L3 = 4.5 * mm
     INDENT_ITEM = 6.0 * mm
 
+# Step 2: 和暦変換処理 #
 def to_wareki(date_str: str) -> str:
     """西暦和暦変換（表示用）"""
     try:
+        # 実務的エッジケース: すでに「年」が含まれている場合は変換済みとみなす
         if '年' in str(date_str): return str(date_str)
         dt_obj = pd.to_datetime(date_str)
         y, m, d = dt_obj.year, dt_obj.month, dt_obj.day
@@ -45,22 +43,20 @@ def to_wareki(date_str: str) -> str:
             return dt_obj.strftime("%Y年 %m月 %d日")
         return f"{era} {year_str} {m}月 {d}日"
     except Exception:
+        # データ不在時や解析不能な文字列の場合はそのまま返す
         return str(date_str)
 
 class EstimatePDFGenerator:
-    def __init__(self, df: pd.DataFrame, params: Dict[str, str]):
+    # Step 3: 初期化とフォントの動的注入処理 #
+    def __init__(self, df: pd.DataFrame, params: Dict[str, str], custom_font_name: str = "Helvetica"):
         self.buffer = io.BytesIO()
         self.c = canvas.Canvas(self.buffer, pagesize=landscape(A4))
         self.width, self.height = landscape(A4)
         self.df = df
         self.params = params
         
-        # フォント登録試行
-        try:
-            pdfmetrics.registerFont(TTFont(FONT_NAME, FONT_FILE))
-            self.font = FONT_NAME
-        except:
-            self.font = FONT_NAME_FALLBACK
+        # 修正箇所: 内部でファイルをロードせず、外部から渡されたフォント名をそのまま使用する
+        self.font = custom_font_name
 
         self.content_width = self.width - 30 * mm
         self._setup_columns()
@@ -68,6 +64,7 @@ class EstimatePDFGenerator:
         self.tax_amount = self.total_grand * 0.1
         self.final_total = self.total_grand + self.tax_amount
 
+    # Step 4: カラム幅と位置の計算処理 #
     def _setup_columns(self):
         widths = {'name': 75*mm, 'spec': 67.5*mm, 'qty': 19*mm, 'unit': 12*mm, 'price': 27*mm, 'amt': 29*mm, 'rem': 0*mm}
         widths['rem'] = self.content_width - sum(widths.values())
@@ -80,7 +77,7 @@ class EstimatePDFGenerator:
         self.right_edge = curr_x
         self.y_start = self.height - Style.MARGIN_TOP
 
-    # --- 以下、描画メソッド (既存ロジックを維持) ---
+    # Step 5: 基本描画ユーティリティ関数 #
     def _draw_bold_string(self, x, y, text, size, color=colors.black):
         self.c.saveState()
         self.c.setLineWidth(size * 0.03)
@@ -142,8 +139,8 @@ class EstimatePDFGenerator:
             self.c.line(self.col_x[k], grid_y + Style.HEADER_HEIGHT, self.col_x[k], grid_y)
         self.c.line(self.right_edge, grid_y + Style.HEADER_HEIGHT, self.right_edge, grid_y)
 
+    # Step 6: 表紙・鑑の描画処理 #
     def draw_cover(self):
-        # 表紙描画 (省略せずそのまま実装)
         title_text = "御    見    積    書"
         lw = 180*mm
         lx = (self.width - lw)/2
@@ -186,7 +183,6 @@ class EstimatePDFGenerator:
         self.c.showPage()
 
     def draw_summary(self):
-        # 鑑（サマリー）描画
         self._draw_centered_bold(self.width/2, self.height - 30*mm, "御    見    積    書", 32)
         self.c.setLineWidth(1); self.c.line(self.width/2 - 60*mm, self.height - 32*mm, self.width/2 + 60*mm, self.height - 32*mm)
         self.c.setLineWidth(0.5); self.c.line(self.width/2 - 60*mm, self.height - 33*mm, self.width/2 + 60*mm, self.height - 33*mm)
@@ -221,6 +217,199 @@ class EstimatePDFGenerator:
             self.c.drawString(colon_x, curr_y, "：")
             self.c.setFont(self.font, 13); self.c.drawString(val_start_x, curr_y, val)
             self.c.line(line_sx, curr_y-2*mm, line_ex, curr_y-2*mm)
+            curr_y -= gap
+        x_co = box_left + box_width - 90*mm
+        y_co = box_btm + 10*mm
+        self.c.setFont(self.font, 13); self.c.drawString(x_co, y_co + 15*mm, self.params['company_name'])
+        self.c.setFont(self.font, 11); self.c.drawString(x_co, y_co + 10*mm, f"代表取締役   {self.params['ceo']}")
+        self.c.setFont(self.font, 10); self.c.drawString(x_co, y_co + 5*mm, f"〒 {self.params['address']}")
+        self.c.drawString(x_co, y_co, f"TEL {self.params['phone']}  FAX {self.params['fax']}")
+        wareki = to_wareki(self.params['date'])
+        self.c.setFont(self.font, 12)
+        self.c.drawString(self.width - 80*mm, box_top + 5*mm, wareki)
+        self.c.showPage()
+
+    # Step 7: 総括表・明細書の描画処理群 #
+    def draw_total_summary(self, p_num):
+        self._draw_page_header(p_num, "見 積 総 括 表")
+        self._draw_grid(self.y_start, Style.MARGIN_BOTTOM - Style.ROW_HEIGHT)
+        y = self.y_start
+        l1_summary = self.df.groupby('大項目', sort=False)['見積金額'].apply(lambda x: x.apply(parse_amount).sum()).reset_index()
+        for _, row in l1_summary.iterrows():
+            l1_name = row['大項目']
+            amount = row['見積金額']
+            if not l1_name: continue
+            self._draw_bold_string(self.col_x['name'] + Style.INDENT_L1, y-5*mm, f"■ {l1_name}", 10, Style.COLOR_L1)
+            self.c.setFont(self.font, 10)
+            self.c.setFillColor(Style.COLOR_L1)
+            self.c.drawRightString(self.col_x['amt'] + self.col_widths['amt'] - 2*mm, y-5*mm, f"{int(amount):,}")
+            y -= Style.ROW_HEIGHT
+        footer_rows = 3
+        footer_start_y = Style.MARGIN_BOTTOM + (footer_rows * Style.ROW_HEIGHT)
+        y = footer_start_y
+        labels = [("小計", self.total_grand), ("消費税", self.tax_amount), ("総合計", self.final_total)]
+        for lbl, val in labels:
+            self.c.setFillColor(colors.black)
+            self._draw_bold_string(self.col_x['name'] + 20*mm, y-5*mm, f"【 {lbl} 】", 11, Style.COLOR_TOTAL)
+            self.c.setFont(self.font, 11)
+            self.c.setFillColor(Style.COLOR_TOTAL)
+            self.c.drawRightString(self.col_x['amt'] + self.col_widths['amt'] - 2*mm, y-5*mm, f"{int(val):,}")
+            y -= Style.ROW_HEIGHT
+        self.c.showPage()
+        return p_num + 1
+
+    def draw_breakdown_pages(self, p_num):
+        raw_rows = self.df.to_dict('records')
+        breakdown = {}
+        seen_l1 = []
+        seen_l2_by_l1 = {}
+        for row in raw_rows:
+            l1 = str(row.get('大項目', '')).strip()
+            l2 = str(row.get('中項目', '')).strip()
+            amt = parse_amount(row.get('見積金額', 0))
+            if not l1: continue
+            if l1 not in seen_l1:
+                seen_l1.append(l1)
+                seen_l2_by_l1[l1] = []
+            if l2 not in seen_l2_by_l1[l1]:
+                seen_l2_by_l1[l1].append(l2)
+            if l1 not in breakdown: breakdown[l1] = {'items': {}, 'total': 0}
+            if l2 not in breakdown[l1]['items']: breakdown[l1]['items'][l2] = 0
+            breakdown[l1]['items'][l2] += amt
+            breakdown[l1]['total'] += amt
+
+        self._draw_page_header(p_num, "内 訳 明 細 書 (集計)")
+        self._draw_grid(self.y_start, Style.MARGIN_BOTTOM - Style.ROW_HEIGHT)
+        y = self.y_start
+        is_first = True
+        
+        for l1 in seen_l1:
+            data = breakdown[l1]
+            sorted_l2 = seen_l2_by_l1[l1]
+            spacer = 1 if not is_first else 0
+            rows_needed = spacer + 1 + len(sorted_l2) + 1
+            rows_left = int((y - Style.MARGIN_BOTTOM) / Style.ROW_HEIGHT)
+            if rows_needed > rows_left:
+                self.c.showPage()
+                p_num += 1
+                self._draw_page_header(p_num, "内 訳 明 細 書 (集計)")
+                self._draw_grid(self.y_start, Style.MARGIN_BOTTOM - Style.ROW_HEIGHT)
+                y = self.y_start
+                is_first = True
+                spacer = 0
+            if spacer: y -= Style.ROW_HEIGHT
+            self._draw_bold_string(self.col_x['name'] + Style.INDENT_L1, y-5*mm, f"■ {l1}", 10, Style.COLOR_L1)
+            y -= Style.ROW_HEIGHT
+            
+            for l2 in sorted_l2:
+                if not l2: continue 
+                amt = data['items'][l2]
+                self._draw_bold_string(self.col_x['name'] + Style.INDENT_L2, y-5*mm, f"● {l2}", 10, Style.COLOR_L2)
+                self.c.setFont(self.font, 10); self.c.setFillColor(Style.COLOR_L2)
+                self.c.drawRightString(self.col_x['amt'] + self.col_widths['amt'] - 2*mm, y-5*mm, f"{int(amt):,}")
+                y -= Style.ROW_HEIGHT
+                
+            self._draw_bold_string(self.col_x['name'] + Style.INDENT_L1, y-5*mm, f"【{l1} 計】", 10, Style.COLOR_L1)
+            self.c.setFont(self.font, 10); self.c.setFillColor(Style.COLOR_L1)
+            self.c.drawRightString(self.col_x['amt'] + self.col_widths['amt'] - 2*mm, y-5*mm, f"{int(data['total']):,}")
+            y -= Style.ROW_HEIGHT
+            is_first = False
+        self.c.showPage()
+        return p_num + 1
+
+    def draw_detail_pages(self, p_num):
+        data_tree = {}
+        seen_l1 = []
+        seen_l2_by_l1 = {}
+        for row in self.df.to_dict('records'):
+            l1 = str(row.get('大項目', '')).strip(); l2 = str(row.get('中項目', '')).strip()
+            l3 = str(row.get('小項目', '')).strip(); l4 = str(row.get('部分項目', '')).strip()
+            if not l1: continue
+            if l1 not in seen_l1:
+                seen_l1.append(l1); seen_l2_by_l1[l1] = []
+            if l2 not in seen_l2_by_l1[l1]: seen_l2_by_l1[l1].append(l2)
+            if l1 not in data_tree: data_tree[l1] = {}
+            if l2 not in data_tree[l1]: data_tree[l1][l2] = []
+            item = row.copy()
+            item.update({
+                'amt_val': parse_amount(row.get('見積金額', 0)),
+                'qty_val': parse_amount(row.get('数量', 0)),
+                'price_val': parse_amount(row.get('売単価', 0)),
+                'l3': l3, 'l4': l4
+            })
+            if item.get('名称'): data_tree[l1][l2].append(item)
+
+        self._draw_page_header(p_num, "内 訳 明 細 書 (詳細)")
+        self._draw_grid(self.y_start, Style.MARGIN_BOTTOM - Style.ROW_HEIGHT)
+        y = self.y_start
+        is_first = True
+
+        for l1 in seen_l1:
+            l2_dict = data_tree[l1]
+            l1_total = sum([sum([i['amt_val'] for i in items]) for items in l2_dict.values()])
+            sorted_l2 = seen_l2_by_l1[l1]
+            if not is_first:
+                if y <= Style.MARGIN_BOTTOM + Style.ROW_HEIGHT * 2:
+                    self.c.showPage(); p_num += 1
+                    self._draw_page_header(p_num, "内 訳 明 細 書 (詳細)")
+                    self._draw_grid(self.y_start, Style.MARGIN_BOTTOM - Style.ROW_HEIGHT)
+                    y = self.y_start
+                else:
+                    y -= Style.ROW_HEIGHT
+            if y <= Style.MARGIN_BOTTOM + Style.ROW_HEIGHT:
+                self.c.showPage(); p_num += 1
+                self._draw_page_header(p_num, "内 訳 明 細 書 (詳細)")
+                self._draw_grid(self.y_start, Style.MARGIN_BOTTOM - Style.ROW_HEIGHT)
+                y = self.y_start
+            self._draw_bold_string(self.col_x['name']+Style.INDENT_L1, y-5*mm, f"■ {l1}", 10, Style.COLOR_L1)
+            y -= Style.ROW_HEIGHT
+            is_first = False
+            
+            for i_l2, l2 in enumerate(sorted_l2):
+                items = l2_dict[l2]
+                l2_total = sum([i['amt_val'] for i in items])
+                rows_to_draw = []
+                if l2:
+                    rows_to_draw.append({'type': 'header_l2', 'label': f"● {l2}"})
+                
+                curr_l3 = ""; curr_l4 = ""; sub_l3 = 0; sub_l4 = 0
+                item_rows = []
+                for itm in items:
+                    l3 = itm['l3']; l4 = itm['l4']; amt = itm['amt_val']
+                    l3_chg = (l3 and l3 != curr_l3); l4_chg = (l4 and l4 != curr_l4)
+                    if curr_l4 and (l4_chg or l3_chg):
+                        item_rows.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4})
+                        if l4 or l3_chg: item_rows.append({'type': 'empty'})
+                        curr_l4 = ""; sub_l4 = 0
+                    if curr_l3 and l3_chg:
+                        item_rows.append({'type': 'footer_l3', 'label': f"【{curr_l3} 小計】", 'amt': sub_l3})
+                        if l3: item_rows.append({'type': 'empty'})
+                        curr_l3 = ""; sub_l3 = 0
+                    if l3_chg: item_rows.append({'type': 'header_l3', 'label': f"・ {l3}"}); curr_l3 = l3
+                    if l4_chg: item_rows.append({'type': 'header_l4', 'label': f"【{l4}】"}); curr_l4 = l4
+                    sub_l3 += amt; sub_l4 += amt
+                    item_rows.append({'type': 'item', 'data': itm})
+                if curr_l4: item_rows.append({'type': 'footer_l4', 'label': f"【{curr_l4}】 小計", 'amt': sub_l4})
+                if curr_l3: item_rows.append({'type': 'footer_l3', 'label': f"【{curr_l3} 小計】", 'amt': sub_l3})
+                rows_to_draw.extend(item_rows)
+                if l2:
+                    rows_to_draw.append({'type': 'footer_l2', 'label': f"【{l2} 計】", 'amt': l2_total})
+                
+                is_last_l2 = (i_l2 == len(sorted_l2) - 1)
+                if is_last_l2:
+                    rows_to_draw.append({'type': 'footer_l1', 'label': f"【{l1} 計】", 'amt': l1_total})
+                else:
+                    rows_to_draw.extend([{'type': 'empty'}, {'type': 'empty'}])
+                while rows_to_draw and rows_to_draw[-1]['type'] == 'empty': rows_to_draw.pop()
+                
+                l2_started = False; cur_l3_lbl = None; cur_l4_lbl = None
+                for b in rows_to_draw:
+                    itype = b['type']
+                    force_stay = (itype == 'footer_l1')
+                    if y - Style.ROW_HEIGHT < Style.MARGIN_BOTTOM - 0.1 and not force_stay:
+                        self.c.showPage(); p_num += 1
+                        self._draw_page_header(p_num, "内 訳 明 細 書 (詳細)")
+                        self.c.line(line_sx, curr_y-2*mm, line_ex, curr_y-2*mm)
             curr_y -= gap
         x_co = box_left + box_width - 90*mm
         y_co = box_btm + 10*mm
